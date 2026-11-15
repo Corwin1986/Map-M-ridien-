@@ -1,0 +1,4 @@
+.godot/
+*.keystore
+*.jks
+exports/
