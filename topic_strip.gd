@@ -19,7 +19,7 @@ var font: Font
 func _ready():
  mouse_filter=Control.MOUSE_FILTER_STOP
  clip_contents=true
- font=get_theme_default_font()
+ font=preload("res://assets/body.ttf")
  var x=0.0
  for topic in topics:
   var width=maxf(84,font.get_string_size(topic,HORIZONTAL_ALIGNMENT_LEFT,-1,16).x+28)
@@ -35,16 +35,17 @@ func _draw():
  for i in topics.size():
   var rect=pills[i];rect.position.x-=offset
   var style=StyleBoxFlat.new()
-  style.bg_color=Color("d8bd82") if topics[i]==active else Color("e9e8df")
-  style.set_corner_radius_all(11)
+  style.bg_color=Color("eee7d5") if topics[i]==active else Color("f3f0e7")
+  style.set_corner_radius_all(7)
   draw_style_box(style,rect)
-  draw_string(font,rect.position+Vector2(14,29),topics[i],HORIZONTAL_ALIGNMENT_LEFT,-1,16,Color("10232c"))
+  if topics[i]==active:draw_line(rect.position+Vector2(12,45),rect.end-Vector2(12,1),Color("b39555"),3)
+  draw_string(preload("res://assets/bold.ttf") if topics[i]==active else font,rect.position+Vector2(14,29),topics[i],HORIZONTAL_ALIGNMENT_LEFT,-1,16,Color("10232c"))
  # Subtle progress rail makes the off-screen topics discoverable.
  if maximum()>0:
-  draw_line(Vector2(0,55),Vector2(size.x,55),Color("deddd4"),2)
+  draw_line(Vector2(0,55),Vector2(size.x,55),Color("deddd4"),1)
   var thumb=size.x*size.x/extent
   var x=(size.x-thumb)*offset/maximum()
-  draw_line(Vector2(x,55),Vector2(x+thumb,55),Color("b29862"),3)
+  draw_line(Vector2(x,55),Vector2(x+thumb,55),Color("b29862"),2)
 
 func begin(at:Vector2,index:int):
  finger=index;origin=at;previous=at;dragged=false;velocity=0;last_ms=Time.get_ticks_msec()

@@ -8,7 +8,7 @@ def coord(p):return ((p[0]+180)*size[0]/360,(90-p[1])*size[1]/180)
 for heat,name in [(False,'basemap'),(True,'population')]:
     im=Image.new('RGBA',size,(0,0,0,0));draw=ImageDraw.Draw(im)
     for entity in polys:
-        col=(40,66,74,255)
+        col=(53,89,99,255)
         if heat:
             pop=countries[entity['code']].get('population') or 0
             t=max(0,min(1,math.log(max(pop,1))/20-.2))
@@ -16,7 +16,7 @@ for heat,name in [(False,'basemap'),(True,'population')]:
         for poly in entity['rings']:
             outer=[coord(p) for p in poly[0]]
             draw.polygon(outer,fill=col)
-            draw.line(outer,fill=(77,99,101,255),width=1,joint='curve')
+            draw.line(outer,fill=((94,120,123,255) if not heat else (77,99,101,255)),width=1,joint='curve')
             for hole in poly[1:]:draw.polygon([coord(p) for p in hole],fill=(0,0,0,0))
     im.save(root/('assets/'+name+'.png'),optimize=True)
 print('Basemap textures generated')

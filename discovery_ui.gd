@@ -57,6 +57,7 @@ func rerender():
  if is_instance_valid(app.scroll):target.scroll=app.scroll.scroll_vertical
  render(target)
 func render(dest:Dictionary):
+ app.set_nav_section(3 if dest.kind in ["carnet","progress"] else 1)
  screen=dest.duplicate(true);country_origin={}
  match dest.kind:
   "hub":hub()
@@ -99,21 +100,29 @@ func attach_country(code:String,topic:String):
  if not country_origin.is_empty():
   app.scroll.size.y-=48
   app.fixed_button(app.modal,"← Revenir au "+("parcours" if country_origin.kind=="route" else "contenu de découverte"),Vector2(20,app.modal.size.y-53),Vector2(476,44),back,true)
+func editorial_card(kicker:String,title:String,description:String)->VBoxContainer:
+ var frame=preload("res://reading_card.gd").new()
+ frame.add_theme_stylebox_override("panel",app.box(Color("faf8f1"),14,Color("d9cfb7")));app.sheet.add_child(frame)
+ var content=VBoxContainer.new();content.add_theme_constant_override("separation",8);frame.add_child(content)
+ var tag=app.label(content,kicker,11,Color("806b3f"));tag.add_theme_font_override("font",app.BOLD)
+ app.label(content,title,23,app.INK,true)
+ app.paragraph(content,description,14,app.MUTED)
+ return content
 func hub():
  modal("Découvrir","À VOTRE RYTHME · HORS CONNEXION")
  var d=store.discovery_for(date)
- app.heading("Ce jour-là, quelque part dans le monde")
- if not d.is_empty():button(app.sheet,d.title,func():navigate({"kind":"discovery","id":d.id}))
- else:app.note("Aucun événement vérifié pour cette date.")
- app.note("Une date, un pays, une histoire à découvrir aujourd’hui.")
- app.heading("Trois questions pour voyager")
- app.note("Histoire, cultures et horizons lointains : laissez-vous surprendre par le quiz du jour.")
+ var daily=editorial_card("L’HISTOIRE DU JOUR","Ce jour-là, quelque part dans le monde","Une date, un pays, une histoire à découvrir aujourd’hui.")
+ if not d.is_empty():button(daily,d.title,func():navigate({"kind":"discovery","id":d.id}))
+ else:app.label(daily,"Aucun événement vérifié pour cette date.",14,app.MUTED)
+ app.space(app.sheet,4)
+ var quiz=editorial_card("LE QUIZ DU JOUR","Trois questions pour voyager","Histoire, cultures et horizons lointains : laissez-vous surprendre par le quiz du jour.")
  var q=store.data.quizzes.get(date,{});var run=q.get("attempts",[{"complete":false,"answers":[]}])[-1]
- button(app.sheet,("Voir mon résultat" if run.complete else "Reprendre" if not run.answers.is_empty() else "Faire le quiz du jour")+" · "+str(q.get("ids",[0,1,2]).size())+" questions",func():navigate({"kind":"quiz","date":date}))
+ button(quiz,("Voir mon résultat" if run.complete else "Reprendre" if not run.answers.is_empty() else "Faire le quiz du jour")+" · "+str(q.get("ids",[0,1,2]).size())+" questions",func():navigate({"kind":"quiz","date":date}))
+ app.heading("Poursuivre le voyage")
  button(app.sheet,"Parcours · quelques étapes pour comprendre",func():navigate({"kind":"routes"}))
  button(app.sheet,"Mon carnet de découvertes",func():navigate({"kind":"carnet"}))
  if store.data.engaged:button(app.sheet,"Mes rappels facultatifs",func():navigate({"kind":"notifications"}))
- app.note("Ces contenus sont embarqués et enrichis avec les nouvelles versions. La consultation mensuelle des sources est indépendante.")
+
 func show_discovery(id:String):
  var d=store.discovery(id)
  if d.is_empty():hub();return
@@ -168,7 +177,12 @@ func show_quiz(day:String):
     for other in buttons:other.button_pressed=false
     buttons[store.options_for(q,day).find(original)].button_pressed=true
     validate.disabled=false)
-   b.toggle_mode=true;buttons.append(b)
+   b.toggle_mode=true;b.custom_minimum_size.y=58
+   b.add_theme_color_override("font_color",app.INK);b.add_theme_color_override("font_hover_color",app.INK)
+   b.add_theme_stylebox_override("normal",app.box(Color("faf8f1"),10,Color("d4d7cd")))
+   b.add_theme_stylebox_override("hover",app.box(Color("e9e6da"),10,Color("b9a574")))
+   b.add_theme_stylebox_override("pressed",app.box(Color("e5d4a8"),10,Color("a98a48")))
+   buttons.append(b)
   app.sheet.move_child(validate,app.sheet.get_child_count()-1)
 func show_saved_question(id:String):
  var q=store.question(id)

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 : "${ANDROID_HOME:?Indiquer ANDROID_HOME vers le SDK Android et configurer le JDK dans Godot}"
 BUILD_TOOLS="${MERIDIEN_BUILD_TOOLS:-$ANDROID_HOME/build-tools/35.0.0}"
-OUT="${1:-../Meridien_v16.apk}"
+OUT="${1:-../Meridien_v18.apk}"
 python3 native/check_artifact.py
 godot --headless --editor --path . --export-debug Android "$OUT"
 python3 scripts/finalize_apk.py "$OUT"

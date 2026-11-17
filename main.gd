@@ -16,7 +16,7 @@ const TOPICS = ["L’essentiel","Histoire","Villes","Conflits","Géographie","Po
 const PEOPLE_DOMAINS = {"Histoire et politique":"Politique et histoire","Musique":"Musique","Sport":"Sport","Sciences et inventions":"Sciences","Arts et littérature":"Arts et littérature","Cinéma et scène":"Cinéma et scène","Industrie et économie":"Industrie et économie","Exploration et société":"Exploration et société"}
 const MapView = preload("res://map.gd")
 const INK = Color("10232c")
-const MUTED = Color("64777a")
+const MUTED = Color("52666a")
 const CREAM = Color("f3f0e7")
 const GOLD = Color("d8bd82")
 const DARK = Color("0b202b")
@@ -190,13 +190,16 @@ func fixed_label(parent: Node, txt: String, pos: Vector2, dims: Vector2, fs: int
 func button(parent: Node, txt: String, call: Callable, light: bool=true, chosen: bool=false) -> Button:
 	var b:=Button.new();b.text=txt;b.custom_minimum_size=Vector2(0,46)
 	b.add_theme_font_size_override("font_size",15)
-	b.add_theme_color_override("font_color",INK if light or chosen else Color("dce5e3"))
-	b.add_theme_color_override("font_hover_color",INK if light else Color.WHITE)
+	b.add_theme_font_override("font",BODY)
+	b.add_theme_color_override("font_color",INK if chosen else Color("f6f3e9"))
+	b.add_theme_color_override("font_hover_color",INK if chosen else Color.WHITE)
 	b.add_theme_color_override("font_pressed_color",INK)
-	b.add_theme_stylebox_override("normal",box(GOLD if chosen else (Color("e8e8df") if light else Color("18313d")),10))
-	b.add_theme_stylebox_override("hover",box(Color("e6d8b9") if light else Color("34505a"),10))
+	b.add_theme_stylebox_override("normal",box(GOLD if chosen else (Color("173944") if light else Color("18313d")),10))
+	b.add_theme_stylebox_override("hover",box(Color("365663"),10))
 	b.add_theme_stylebox_override("pressed",box(GOLD,10))
 	b.add_theme_stylebox_override("focus",box(Color.TRANSPARENT,10,Color("b39152")))
+	b.add_theme_stylebox_override("disabled",box(Color("e2e2d9"),10,Color("d3d5cc")))
+	b.add_theme_color_override("font_disabled_color",Color("6a7776"))
 	b.pressed.connect(call);parent.add_child(b)
 	return b
 
@@ -218,7 +221,7 @@ func paragraph(parent:Node,txt:String,fs:int=17,color:Color=INK):
 	return r
 
 func heading(txt:String):
-	space(sheet,8);label(sheet,txt,25,INK,true);space(sheet,2)
+	space(sheet,16);label(sheet,txt,25,INK,true);space(sheet,4)
 
 func eyebrow(txt:String):
 	label(sheet,txt.to_upper(),11,MUTED)
@@ -235,6 +238,9 @@ func source_button(txt:String,url:String):
 	var b=button(sheet,txt+"  ↗",func():OS.shell_open(url))
 	b.alignment=HORIZONTAL_ALIGNMENT_LEFT
 	b.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+	b.add_theme_color_override("font_color",Color("214d5b"));b.add_theme_color_override("font_hover_color",INK)
+	b.add_theme_stylebox_override("normal",box(Color("faf8f1"),8,Color("d7ddd8")))
+	b.add_theme_stylebox_override("hover",box(Color("e6ece6"),8))
 
 func flag(parent:Node,code:String,pos:Vector2,dims:Vector2):
 	var path="res://assets/flags/"+str(countries[code].get("iso2",""))+".svg"
@@ -243,11 +249,22 @@ func flag(parent:Node,code:String,pos:Vector2,dims:Vector2):
 
 func build_header():
 	top=panel(self,Vector2.ZERO,Vector2(540,104),DARK,0)
-	fixed_label(top,"MÉRIDIEN V16",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
+	fixed_label(top,"MÉRIDIEN V18",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
 	fixed_label(top,"LE MONDE, AVEC DU CONTEXTE",Vector2(26,68),Vector2(390,22),10,Color("9badae"))
 	var search_btn=fixed_button(top,"",Vector2(420,27),Vector2(44,44),func():show_search())
 	search_btn.icon=preload("res://assets/search.svg");search_btn.expand_icon=true;search_btn.add_theme_constant_override("icon_max_width",22);search_btn.tooltip_text="Rechercher un pays"
 	fixed_button(top,"i",Vector2(474,27),Vector2(42,44),show_help)
+
+var nav_section:int=0
+
+func set_nav_section(index:int):
+	nav_section=index
+	if not is_instance_valid(bottom):return
+	for child in bottom.get_children():
+		if child is Button:
+			var active=child.get_index()==index
+			child.add_theme_stylebox_override("normal",box(Color("2b4750") if active else Color("18313d"),10))
+			if child.has_node("ActiveMark"):child.get_node("ActiveMark").visible=active
 
 func build_footer():
 	if is_instance_valid(bottom):bottom.queue_free()
@@ -255,8 +272,12 @@ func build_footer():
 	var items=[["Carte",func():journey.screen={};journey.country_origin={};set_mode("Pays")],["Découvrir",func():journey.open_hub()],["Comparer",func():journey.screen={};journey.country_origin={};show_compare()],["Carnet",show_bookmarks]]
 	for i in items.size():
 		var b=fixed_button(bottom,items[i][0],Vector2(6+i*134,12),Vector2(128,48),items[i][1]);b.add_theme_font_size_override("font_size",13)
+		b.icon=load("res://assets/nav_"+str(i)+".svg");b.expand_icon=true;b.add_theme_constant_override("icon_max_width",18);b.add_theme_constant_override("h_separation",7)
+		var mark=ColorRect.new();mark.name="ActiveMark";mark.color=GOLD;mark.position=Vector2(16,45);mark.size=Vector2(96,2);mark.mouse_filter=Control.MOUSE_FILTER_IGNORE;b.add_child(mark)
+	set_nav_section(nav_section)
 
 func set_mode(m:String):
+	set_nav_section(0)
 	close_modal();mode=m;map.mode=m;map.event_type=0;map.queue_redraw()
 	top.queue_free();build_header();home_card()
 	if m=="Conflits":show_toast("Conflits historiques · 1826–"+str(atlas_year))
@@ -292,12 +313,14 @@ func home_card():
 		flag(p,selected,Vector2(18,22),Vector2(49,34))
 		var cname=fixed_label(p,c.name,Vector2(81,14),Vector2(350,47),28,INK,true)
 		cname.autowrap_mode=TextServer.AUTOWRAP_OFF;cname.clip_text=true;cname.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+		fit_country_title(cname,str(c.name))
 		fixed_button(p,"×",Vector2(445,13),Vector2(40,42),func():selected="";map.selected="";map.queue_redraw();home_card(),true)
 		fixed_label(p,c.capital+"  ·  "+c.region,Vector2(20,65),Vector2(460,30),14,MUTED)
 		fixed_label(p,num(c.population)+" habitants"+year_suffix(c),Vector2(20,100),Vector2(460,27),16,INK)
 		fixed_button(p,"Plus d’infos sur le pays  →",Vector2(18,143),Vector2(464,44),func():show_country(selected),true,true)
 
 func select_country(code:String):
+	set_nav_section(0)
 	if journey!=null:journey.screen={};journey.country_origin={};journey.store.data.opened[code]=true;journey.store.save()
 	selected=code;map.selected=code;map.queue_redraw()
 	if code not in visited:visited.append(code);save_carnet()
@@ -309,15 +332,59 @@ func close_modal():
 		modal.hide();modal.queue_free();modal=null
 	compare_pick=""
 
-func open_modal(title_text:String,subtitle:String=""):
+func open_modal(title_text:String,subtitle:String="",animate:bool=true):
 	close_modal()
 	modal=panel(self,Vector2(12,116),Vector2(516,screen_height()-198),CREAM,20)
 	var title_label=fixed_label(modal,title_text,Vector2(20,14),Vector2(426,46),28,INK,true)
+	title_label.name="SheetTitle"
 	title_label.autowrap_mode=TextServer.AUTOWRAP_OFF;title_label.clip_text=true;title_label.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
 	fixed_button(modal,"×",Vector2(450,14),Vector2(44,44),ui_back,true)
-	fixed_label(modal,subtitle,Vector2(21,64),Vector2(472,34),12,MUTED)
+	var subtitle_label=fixed_label(modal,subtitle,Vector2(21,64),Vector2(472,34),12,MUTED)
+	subtitle_label.name="SheetSubtitle"
+	var divider=ColorRect.new();divider.color=Color("dedacf");divider.position=Vector2(20,99);divider.size=Vector2(476,1);divider.mouse_filter=Control.MOUSE_FILTER_IGNORE;modal.add_child(divider)
+	if animate:
+		modal.modulate.a=0.0
+		create_tween().tween_property(modal,"modulate:a",1.0,0.18)
 	scroll=ScrollContainer.new();scroll.position=Vector2(20,106);scroll.size=Vector2(478,screen_height()-322);scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED;modal.add_child(scroll)
 	sheet=VBoxContainer.new();sheet.size_flags_horizontal=Control.SIZE_EXPAND_FILL;sheet.add_theme_constant_override("separation",10);scroll.add_child(sheet)
+
+func fit_country_title(title:Label,txt:String):
+	var fs=28
+	while fs>22 and TITLE.get_string_size(txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs).x>title.size.x:fs-=1
+	title.add_theme_font_size_override("font_size",fs)
+	if TITLE.get_string_size(txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs).x>title.size.x:
+		var split_at=txt.find(" ");var best=100000.0
+		for i in txt.length():
+			if txt[i]!=" ":continue
+			var width=maxf(TITLE.get_string_size(txt.substr(0,i),HORIZONTAL_ALIGNMENT_LEFT,-1,20).x,TITLE.get_string_size(txt.substr(i+1),HORIZONTAL_ALIGNMENT_LEFT,-1,20).x)
+			if width<best:best=width;split_at=i
+		title.text=txt.substr(0,split_at)+"\n"+txt.substr(split_at+1)
+		title.autowrap_mode=TextServer.AUTOWRAP_OFF
+		title.text_overrun_behavior=TextServer.OVERRUN_NO_TRIMMING
+		title.clip_text=false;title.position.y=6;title.size.y=58
+		title.add_theme_font_size_override("font_size",20)
+	title.tooltip_text=txt
+
+func reading_link(parent:Node,title:String,callback:Callable,caption:String="")->Button:
+	var b=button(parent,title+("\n"+caption if caption!="" else "")+"  ›",callback)
+	b.alignment=HORIZONTAL_ALIGNMENT_LEFT;b.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+	b.custom_minimum_size.y=58
+	b.add_theme_color_override("font_color",INK);b.add_theme_color_override("font_hover_color",INK)
+	b.add_theme_stylebox_override("normal",box(Color("faf8f1"),8,Color("dedacf")))
+	b.add_theme_stylebox_override("hover",box(Color("eee9da"),8,Color("d3c49f")))
+	return b
+
+func article_paragraph(parent:Node,txt:String,fs:int=17):
+	var r=paragraph(parent,"",fs)
+	var regex=RegEx.new();regex.compile("(?m)^={2,6}\\s*(.*?)\\s*={2,6}\\s*$")
+	var cursor=0
+	for hit in regex.search_all(txt):
+		r.add_text(txt.substr(cursor,hit.get_start()-cursor).strip_edges()+"\n\n")
+		r.push_font(BOLD);r.push_font_size(fs+2)
+		r.add_text(hit.get_string(1));r.pop();r.pop();r.add_text("\n\n")
+		cursor=hit.get_end()
+	r.add_text(txt.substr(cursor).strip_edges())
+	return r
 
 func num(value) -> String:
 	if value==null:return "Non renseigné"
@@ -331,18 +398,27 @@ func year_suffix(c:Dictionary) -> String:
 	return " · "+str(int(c.pop_year)) if c.get("population")!=null and c.get("pop_year")!=null else ""
 
 func stat(title_text:String,value:String,caption:String=""):
-	var wrap:=ReadingCard.new();wrap.add_theme_stylebox_override("panel",box(Color("e9e8df"),12));sheet.add_child(wrap)
+	var wrap:=ReadingCard.new();wrap.add_theme_stylebox_override("panel",box(Color("faf8f1"),12,Color("dedacf")));sheet.add_child(wrap)
 	var v:=VBoxContainer.new();wrap.add_child(v)
-	label(v,title_text.to_upper(),10,MUTED)
-	label(v,value,21,INK)
+	v.add_theme_constant_override("separation",6)
+	label(v,title_text.to_upper(),11,MUTED)
+	label(v,value,24,INK)
 	if caption!="":label(v,caption,12,MUTED)
 
 func show_country(code:String,topic:String="L’essentiel"):
+	var same_country=is_instance_valid(modal) and modal.get_meta("country","")==code
 	selected=code;map.selected=code;map.queue_redraw();home_card()
 	if code not in visited:visited.append(code);save_carnet()
 	active_topic=topic;full_read=false
 	var c:Dictionary=countries[code]
-	open_modal(c.name,c.region+"  /  "+c.capital)
+	open_modal(c.name,c.region+"  /  "+c.capital,not same_country)
+	modal.set_meta("country",code)
+	flag(modal,code,Vector2(20,22),Vector2(46,34))
+	modal.get_node("SheetTitle").position.x=80
+	modal.get_node("SheetTitle").size.x=362
+	fit_country_title(modal.get_node("SheetTitle"),str(c.name))
+	modal.get_node("SheetSubtitle").position.x=80
+	modal.get_node("SheetSubtitle").size.x=362
 	# The strip lives outside article scrolling and keeps its position on selection.
 	scroll.position.y=172;scroll.size.y-=66
 	if topic_country!=code:topic_offset=0;topic_country=code
@@ -422,14 +498,14 @@ func show_article_topic(key:String,terms:Array,title_text:String):
 	for sec in sections_of(text):
 		for term in terms:
 			if str(sec.title).to_lower().contains(term):
-				result+="\n"+(str(sec.title)+"\n\n" if str(sec.title)!=title_text else "")+str(sec.text)+"\n"
+				result+="\n"+("== "+str(sec.title)+" ==\n\n" if str(sec.title)!=title_text else "")+str(sec.text)+"\n"
 				break
 	heading(title_text)
 	if result.strip_edges()=="":
 		result=article_intro(key)
 		note("L’article ne contient pas de section distincte pour ce thème. Voici sa présentation générale ; l’article complet permet de poursuivre.")
 	if result!="":
-		paragraph(sheet,shorten(clean_text(result),6000))
+		article_paragraph(sheet,shorten(result,6000))
 		if result.length()>6000:button(sheet,"Lire toute cette rubrique  →",func():show_text_reader(title_text,a,result))
 	else:paragraph(sheet,"Le texte de cet article n’a pas pu être inclus. Sa source reste accessible ci-dessous.")
 	article_credit(a)
@@ -438,15 +514,18 @@ func show_article_topic(key:String,terms:Array,title_text:String):
 func history_fold(title_text:String,txt:String):
 	var section=VBoxContainer.new();section.add_theme_constant_override("separation",8);sheet.add_child(section)
 	var toggle=button(section,"▸  "+title_text,func():pass)
+	toggle.add_theme_color_override("font_color",INK);toggle.add_theme_color_override("font_hover_color",INK)
+	toggle.add_theme_stylebox_override("normal",box(Color("faf8f1"),8,Color("dedacf")))
+	toggle.add_theme_stylebox_override("hover",box(Color("ece6d6"),8))
 	toggle.alignment=HORIZONTAL_ALIGNMENT_LEFT;toggle.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	toggle.custom_minimum_size.y=58;toggle.toggle_mode=true
 	var body=VBoxContainer.new();body.visible=false;section.add_child(body)
 	toggle.toggled.connect(func(opened):
 		if opened and body.get_child_count()==0:
-			paragraph(body,clean_text(txt));space(body,10)
+			article_paragraph(body,txt);space(body,10)
 		body.visible=opened
 		toggle.text=("▾  " if opened else "▸  ")+title_text
-		toggle.add_theme_stylebox_override("normal",box(GOLD if opened else Color("e8e8df"),10)))
+		toggle.add_theme_stylebox_override("normal",box(Color("ece2c9") if opened else Color("faf8f1"),8,Color("d4c9af"))))
 	return toggle
 
 func country_history(code:String):
@@ -514,7 +593,7 @@ func relief_image(map_record:Dictionary,tall:bool=false):
 		return
 	var frame=TextureRect.new();frame.texture=texture;frame.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;frame.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	frame.custom_minimum_size=Vector2(0,440 if tall else 295);frame.size_flags_horizontal=Control.SIZE_EXPAND_FILL;frame.mouse_filter=Control.MOUSE_FILTER_IGNORE
-	sheet.add_child(frame)
+	var mount=ReadingCard.new();mount.add_theme_stylebox_override("panel",box(Color("faf8f1"),10,Color("dedacf")));sheet.add_child(mount);mount.add_child(frame)
 
 func country_relief(code:String,index:int=0):
 	var record:Dictionary=relief_maps.get("countries",{}).get(code,{})
@@ -583,7 +662,7 @@ func show_text_reader(title_text:String,a:Dictionary,txt:String):
 	open_modal(title_text,"LECTURE · TEXTE ENREGISTRÉ HORS CONNEXION")
 	if a.get("scope","")=="intro":note("Cette copie contient la présentation de l’article, pas son texte intégral. La source permet de poursuivre la lecture.")
 	if txt=="":paragraph(sheet,"Cet article n’est pas disponible dans la copie embarquée.")
-	else:paragraph(sheet,clean_text(txt))
+	else:article_paragraph(sheet,txt)
 	article_credit(a)
 
 func show_city(city:Dictionary):
@@ -811,10 +890,11 @@ func country_military(code:String):
 	show_article_topic(code,["armée","défense","militaire","forces armées"],"Défense et organisation")
 
 func comparison_cell(grid:GridContainer,title_text:String,text:String):
-	var wrap:=ReadingCard.new();wrap.size_flags_horizontal=Control.SIZE_EXPAND_FILL;wrap.custom_minimum_size.x=220;wrap.add_theme_stylebox_override("panel",box(Color("e5e5db"),10));grid.add_child(wrap)
+	var wrap:=ReadingCard.new();wrap.size_flags_horizontal=Control.SIZE_EXPAND_FILL;wrap.custom_minimum_size.x=220;wrap.add_theme_stylebox_override("panel",box(Color("faf8f1") if (grid.get_child_count()/2)%2==0 else Color("efede4"),10,Color("dedacf")));grid.add_child(wrap)
 	var v:=VBoxContainer.new();wrap.add_child(v);label(v,title_text,10,MUTED);label(v,text,17,INK)
 
 func show_compare():
+	set_nav_section(2)
 	open_modal("Comparer deux pays","LES MÊMES REPÈRES, CÔTE À CÔTE")
 	var a:Dictionary=countries[compare_a];var b:Dictionary=countries[compare_b]
 	button(sheet,a.name+"  ·  changer",func():show_search("a"))
@@ -856,6 +936,7 @@ func toggle_bookmark(code:String):
 	save_carnet()
 
 func show_bookmarks():
+	set_nav_section(3)
 	journey.country_origin={};journey.navigate({"kind":"carnet"},true)
 
 func show_place(index:int):
@@ -980,6 +1061,7 @@ func _notification(what):
 func _process(delta):
 	if journey==null:return
 	journey.poll();reading_save_time+=delta
+	if not is_instance_valid(modal) and nav_section!=0:set_nav_section(0)
 	if reading_save_time>8 and not journey.reading.is_empty():
 		reading_save_time=0
 		journey.capture(true)
@@ -998,7 +1080,7 @@ func country_cities(code:String):
 		for city in cities:
 			if city.code==code and city.get("region","") not in states:states.append(city.get("region",""))
 		states.sort()
-		for state in states:button(sheet,state_name(state)+"  →",func():show_state_cities(state))
+		for state in states:reading_link(sheet,state_name(state),func():show_state_cities(state))
 	else:
 		var rows=ranked_cities(code)
 		for city in rows:city_button(city)
@@ -1016,11 +1098,8 @@ func ranked_cities(code:String,state:String="") -> Array:
 	return rows
 
 func city_button(city:Dictionary):
-	var b=button(sheet,city.name+(" · capitale" if city.capital else "")+"  →",func():show_city(city))
-	b.alignment=HORIZONTAL_ALIGNMENT_LEFT
-	if city.get("population")!=null:
-		note(num(city.population)+" habitants · "+str(int(city.population_year)))
-	else:note("Population non renseignée")
+	var caption=num(city.population)+" habitants · "+str(int(city.population_year)) if city.get("population")!=null else "Population non renseignée"
+	reading_link(sheet,city.name+(" · capitale" if city.capital else ""),func():show_city(city),caption)
 
 func show_state_cities(state:String):
 	open_modal(state_name(state),"ÉTATS-UNIS · POPULATION DÉCROISSANTE")
@@ -1034,9 +1113,7 @@ func people_for(code:String,group:String="Tous les domaines",query:String="")->A
 	return rows
 
 func person_button(person:Dictionary):
-	var b=button(sheet,person.name+" · "+person.group+" →",func():show_person(person))
-	b.alignment=HORIZONTAL_ALIGNMENT_LEFT
-	b.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+	reading_link(sheet,person.name,func():show_person(person),person.group)
 
 func country_people(code:String):
 	eyebrow("Personnalités marquantes · par domaine")
@@ -1050,7 +1127,7 @@ func country_people(code:String):
 	for group in PEOPLE_DOMAINS:
 		var count=people_for(code,group).size()
 		if count==0:continue
-		var b=button(grid,PEOPLE_DOMAINS[group]+"\n"+str(count)+(" personnalité" if count==1 else " personnalités")+"  →",func():show_people_catalog(code,group))
+		var b=reading_link(grid,PEOPLE_DOMAINS[group],func():show_people_catalog(code,group),str(count)+(" personnalité" if count==1 else " personnalités"))
 		b.size_flags_horizontal=Control.SIZE_EXPAND_FILL
 		b.custom_minimum_size=Vector2(220,78)
 		b.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
@@ -1104,7 +1181,7 @@ func show_person(person:Dictionary):
 	if person.get("association_source","")!="":source_button("Référence du lien au pays",person.association_source)
 	if str(person.get("death",""))!="":stat("Décès","À vérifier" if uncertain_death else format_year(str(person.death)),"Date conservée dans Pantheon 2025")
 
-	if a.get("text","")!="":paragraph(sheet,clean_text(a.text));article_credit(a)
+	if a.get("text","")!="":article_paragraph(sheet,a.text);article_credit(a)
 	else:note("Repères issus de Pantheon 2025 et de Wikidata. La biographie complète de ce profil est accessible en ligne ; elle n’est pas enregistrée dans cette édition.")
 	if person.get("wiki","")!="":source_button("Lire la biographie en ligne","https://fr.wikipedia.org/wiki/"+str(person.wiki).uri_encode())
 	else:source_button("Biographie liée à Wikidata","https://www.wikidata.org/wiki/Special:GoToLinkedPage/frwiki/"+person.qid)
@@ -1204,7 +1281,8 @@ func show_recipe(code:String,id:String):
 	for ingredient in r.ingredients:paragraph(sheet,"• "+str(ingredient))
 	heading("Préparation")
 	for i in r.steps.size():
-		label(sheet,"ÉTAPE "+str(i+1),12,MUTED)
+		space(sheet,8)
+		var step_label=label(sheet,"ÉTAPE "+str(i+1),12,Color("786033"));step_label.add_theme_font_override("font",BOLD)
 		paragraph(sheet,r.steps[i])
 	rule();note(r.note)
 	if r.get("reference_recipe",false):note("Adaptation résumée d’une recette publiée : quantités et méthode vérifiées dans la référence ci-dessous. Cette préparation n’a pas été testée en cuisine par Méridien.")
@@ -1256,7 +1334,7 @@ func show_war(war:Dictionary,code:String=""):
 	if war.end==null:note("La date de fin n’est pas renseignée dans cette édition. Cette mention ne certifie pas qu’un conflit est encore actif aujourd’hui.")
 	var a:Dictionary=articles.get(war.article,{})
 	if a.get("text","")!="":
-		paragraph(sheet,shorten(clean_text(a.text),6500))
+		article_paragraph(sheet,shorten(a.text,6500))
 		if a.text.length()>6500:button(sheet,"Lire le texte enregistré",func():show_text_reader(war.name,a,a.text))
 		article_credit(a)
 	else:
@@ -1319,7 +1397,7 @@ func run_monthly_startup():
 	if monthly_sync.running:return
 	boot_overlay=panel(self,Vector2.ZERO,Vector2(540,screen_height()),DARK,0)
 	boot_overlay.name="MonthlyUpdateScreen"
-	fixed_label(boot_overlay,"MÉRIDIEN V16",Vector2(32,58),Vector2(476,55),31,CREAM,true)
+	fixed_label(boot_overlay,"MÉRIDIEN V18",Vector2(32,58),Vector2(476,55),31,CREAM,true)
 	var y=screen_height()*0.38
 	fixed_label(boot_overlay,"Mise à jour en cours\ndes données",Vector2(32,y),Vector2(476,96),29,CREAM,true)
 	fixed_label(boot_overlay,"Échéance du "+monthly_cycle_label(),Vector2(32,y+108),Vector2(476,40),15,GOLD)
@@ -1394,7 +1472,7 @@ func show_sport(code:String,sport:String):
 	if passages.is_empty():
 		note("Le texte actualisé ne contient plus de passage exploitable sur cette discipline. Consultez le dossier du pays ou la source.")
 	else:
-		for passage in passages:paragraph(sheet,clean_text(str(passage)))
+		for passage in passages:article_paragraph(sheet,str(passage))
 		note("Seuls les titres, champions et clubs explicitement cités par la source sont repris. Les éléments non documentés ne sont pas complétés par estimation.")
 	article_credit(a)
 	button(sheet,"← Revenir aux sports du pays",func():show_country(code,"Sport"))

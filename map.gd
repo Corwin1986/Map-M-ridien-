@@ -135,9 +135,13 @@ func world_view():
 	constrain()
 	queue_redraw()
 
+var ocean:GradientTexture2D
 func _draw():
 	constrain()
-	draw_rect(Rect2(Vector2.ZERO,size), Color("0a1c27"))
+	if ocean==null:
+		ocean=GradientTexture2D.new();ocean.width=8;ocean.height=256
+		ocean.gradient=Gradient.new();ocean.gradient.colors=PackedColorArray([Color("102d3a"),Color("081d28")]);ocean.fill_to=Vector2(0,1)
+	draw_texture_rect(ocean,Rect2(Vector2.ZERO,size),false)
 	var k := factor()
 	var off := size/2.0 - center*k
 	for lon in range(-180,181,30):
@@ -153,16 +157,16 @@ func _draw():
 	for shape in shapes:
 		if use_raster and shape.code!=selected:continue
 		if not visible_world.intersects(shape.bounds):continue
-		var color := Color("28424a")
+		var color := Color("355963")
 		var cc: Dictionary = countries.get(shape.code,{})
 		if mode == "Population":
 			var pop: float = float(cc.get("population",0) if cc.get("population") != null else 0)
 			color = Color("243c46").lerp(Color("c6ab74"),clampf(log(maxf(pop,1))/20.0-0.2,0,1))
 		if shape.code == selected:
-			color = Color("9f8f65")
+			color = Color("c6ad72")
 		if shape.mesh:draw_mesh(shape.mesh,null,Transform2D.IDENTITY,color)
 		if shape.holes:draw_mesh(shape.holes,null,Transform2D.IDENTITY,Color("0a1c27"))
-		draw_multiline(shape.lines,Color("4d6365") if shape.code != selected else gold,0.7/k,true)
+		draw_multiline(shape.lines,Color("4d6365") if shape.code != selected else Color("f0d89b"),(0.7 if shape.code != selected else 1.4)/k,true)
 	draw_set_transform(Vector2.ZERO)
 	for line in disputes:
 		for i in line.size()-1:
@@ -220,8 +224,8 @@ func _draw():
 			if other.intersects(rect): overlap = true
 		if overlap and code != selected:continue
 		drawn.append(rect)
-		draw_string(font,p+Vector2(-ts.x/2,1),txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,Color("080f16"))
-		draw_string(font,p+Vector2(-ts.x/2,0),txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,Color("f0e4ca") if code == selected else Color("b9c7c7"))
+		draw_string(font,p+Vector2(-ts.x/2,1),txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,Color("e8d8af") if code==selected else Color("080f16"))
+		draw_string(font,p+Vector2(-ts.x/2,0),txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,Color("10232c") if code == selected else Color("d3dfdc"))
 	if selected != "" and mode == "Pays" and zoom>=6:
 		for city in cities:
 			if city.code != selected:continue
