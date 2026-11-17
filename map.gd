@@ -24,6 +24,44 @@ var last_pos := Vector2.ZERO
 var moved := false
 var dragging := false
 var gesture := false
+var pan_velocity := Vector2.ZERO
+var last_pan_ms := 0
+var label_sizes:Dictionary={}
+
+func stop_motion():
+	pan_velocity=Vector2.ZERO
+
+func pan_by(delta:Vector2):
+	center-=delta/factor()
+	constrain()
+	queue_redraw()
+
+func record_pan(delta:Vector2):
+	var now=Time.get_ticks_msec()
+	var dt=clampf(float(now-last_pan_ms)/1000.0,0.008,0.05)
+	pan_velocity=pan_velocity.lerp((delta/dt).limit_length(2200.0),0.55)
+	last_pan_ms=now
+	pan_by(delta)
+
+func _process(delta:float):
+	if not is_visible_in_tree():
+		stop_motion()
+		return
+	if dragging or not fingers.is_empty():return
+	if pan_velocity.length()<12:
+		if pan_velocity!=Vector2.ZERO:
+			stop_motion();queue_redraw()
+		return
+	var before=center
+	var dt=minf(delta,0.05)
+	pan_by(pan_velocity*dt)
+	if is_equal_approx(before.x,center.x):pan_velocity.x=0
+	if is_equal_approx(before.y,center.y):pan_velocity.y=0
+	pan_velocity*=exp(-7.5*dt)
+
+func is_moving()->bool:
+	return dragging or not fingers.is_empty() or pan_velocity.length()>=12
+
 var font = preload("res://assets/body.ttf")
 var bold = preload("res://assets/bold.ttf")
 var gold := Color("d8bd82")
@@ -35,6 +73,11 @@ var population_texture: Texture2D
 
 func configure(data: Array, cs: Dictionary, city_data: Array, ev: Array, pl: Array):
 	countries = cs
+	var line_lods:Dictionary={}
+	if FileAccess.file_exists("res://data/map_lines.json"):
+		line_lods=JSON.parse_string(FileAccess.get_file_as_string("res://data/map_lines.json"))
+	for code in countries:
+		label_sizes[code]=[font.get_string_size(countries[code].name,HORIZONTAL_ALIGNMENT_LEFT,-1,12),font.get_string_size(countries[code].name,HORIZONTAL_ALIGNMENT_LEFT,-1,14)]
 	cities = city_data
 	events = ev
 	places = pl
@@ -79,7 +122,12 @@ func configure(data: Array, cs: Dictionary, city_data: Array, ev: Array, pl: Arr
 			if maxf(pb.size.x,pb.size.y)>1.0:tiny=false
 		if tiny:
 			for pb in part_bounds:tiny_points.append({"code":entry.code,"bounds":pb})
-		shapes.append({"code":entry.code, "polys":rings,"mesh":cached_mesh(entry.code,outer,false),"holes":cached_mesh(entry.code,holes,true),"lines":lines,"bounds":bounds})
+		var lods:Array=[]
+		for raw in line_lods.get(entry.code,[]):
+			var packed=PackedVector2Array()
+			for p in raw:packed.append(Vector2(p[0],p[1]))
+			lods.append(packed)
+		shapes.append({"code":entry.code, "polys":rings,"mesh":cached_mesh(entry.code,outer,false),"holes":cached_mesh(entry.code,holes,true),"lines":lines,"lods":lods,"bounds":bounds})
 	queue_redraw()
 
 func cached_mesh(code:String,rings:Array,holes:bool):
@@ -114,6 +162,7 @@ func geographic(pos: Vector2) -> Vector2:
 func change_zoom(mult: float, anchor: Vector2 = Vector2(-1, -1)):
 	if anchor.x < 0:
 		anchor = size / 2.0
+	stop_motion()
 	var before := geographic(anchor)
 	zoom = clampf(zoom * mult, minimum_zoom(), maxf(38.0,minimum_zoom()))
 	center += before - geographic(anchor)
@@ -137,6 +186,7 @@ func _ready():
 	constrain()
 
 func focus(code: String):
+	stop_motion()
 	selected = code
 	var c: Dictionary = countries[code]
 	center = Vector2(c.label[0], -c.label[1])
@@ -146,6 +196,7 @@ func focus(code: String):
 	queue_redraw()
 
 func world_view():
+	stop_motion()
 	zoom = minimum_zoom()
 	center = Vector2.ZERO
 	constrain()
@@ -183,7 +234,12 @@ func _draw():
 			color = Color("c6ad72")
 		if shape.mesh:draw_mesh(shape.mesh,null,Transform2D.IDENTITY,color)
 		if shape.holes:draw_mesh(shape.holes,null,Transform2D.IDENTITY,Color("0a1c27"))
-		draw_multiline(shape.lines,Color("4d6365") if not highlighted else Color("f0d89b"),(0.7 if not highlighted else 1.4)/k,true)
+		var border=shape.lines
+		if shape.lods.size()==3:
+			var level=0 if k>50 else (1 if k>15 else 2)
+			if is_moving():level=mini(level+1,2)
+			border=shape.lods[level]
+		draw_multiline(border,Color("4d6365") if not highlighted else Color("f0d89b"),(0.7 if not highlighted else 1.4)/k,not is_moving())
 	draw_set_transform(Vector2.ZERO)
 	for line in disputes:
 		for i in line.size()-1:
@@ -244,7 +300,7 @@ func _draw():
 					p.y+=26;break
 		var txt: String = c.name
 		var fs := 12 if code != selected else 14
-		var ts := font.get_string_size(txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs)
+		var ts:Vector2 = label_sizes[code][1 if code==selected else 0]
 		var rect := Rect2(p-Vector2(ts.x/2,fs),ts+Vector2(8,6))
 		var overlap := false
 		for other in drawn:
@@ -330,19 +386,23 @@ func _gui_input(event):
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:change_zoom(1/1.2,event.position)
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			dragging=event.pressed
-			if event.pressed:drag_start=event.position;last_pos=event.position;moved=false
+			if event.pressed:stop_motion();last_pan_ms=Time.get_ticks_msec();drag_start=event.position;last_pos=event.position;moved=false
 			elif not moved:pick(event.position)
+			elif Time.get_ticks_msec()-last_pan_ms>100:stop_motion()
 	elif event is InputEventMouseMotion and dragging:
 		if event.position.distance_to(drag_start)>6:moved=true
-		if moved:center -= event.relative/factor();constrain();queue_redraw()
+		if moved:record_pan(event.relative)
 	elif event is InputEventScreenTouch:
 		if event.pressed:
+			stop_motion();last_pan_ms=Time.get_ticks_msec()
 			fingers[event.index]=event.position
 			if fingers.size()==1:drag_start=event.position;moved=false;gesture=false
 			else:gesture=true;moved=true
 		else:
 			if fingers.size()==1 and not moved and not gesture:pick(event.position)
+			if gesture or Time.get_ticks_msec()-last_pan_ms>100:stop_motion()
 			fingers.erase(event.index)
+			queue_redraw()
 	elif event is InputEventScreenDrag:
 		if fingers.size()==2:
 			var keys=fingers.keys()
@@ -352,6 +412,6 @@ func _gui_input(event):
 			if before>5:change_zoom(after/before,(fingers[keys[0]]+fingers[keys[1]])/2)
 		else:
 			if event.position.distance_to(drag_start)>6:moved=true
-			center-=event.relative/factor();constrain();queue_redraw()
+			if moved:record_pan(event.relative)
 			fingers[event.index]=event.position
 	accept_event()

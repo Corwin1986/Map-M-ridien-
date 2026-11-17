@@ -39,6 +39,7 @@ var history_periods: Dictionary
 var relief_maps: Dictionary
 var content_sync
 var monthly_sync
+var military_rankings:Dictionary={}
 var skip_monthly_sync := false
 var boot_overlay:Control
 var boot_bar:ProgressBar
@@ -122,6 +123,7 @@ func _ready():
 	people=content_sync.content("people",read_json("res://data/people.json"))
 	cuisines=content_sync.content("cuisines",read_json("res://data/cuisines.json"))
 	defense=read_json("res://data/defense.json")
+	military_rankings=read_json("res://data/military_rankings.json")
 	sports=read_json("res://data/sports.json")
 	specialties=read_json("res://data/specialties.json")
 	conflict_roles=read_json("res://data/conflict_roles.json")
@@ -272,7 +274,7 @@ func flag(parent:Node,code:String,pos:Vector2,dims:Vector2):
 
 func build_header():
 	top=panel(self,Vector2.ZERO,Vector2(540,104),DARK,0)
-	fixed_label(top,"MÉRIDIEN V21",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
+	fixed_label(top,"MÉRIDIEN V23",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
 	fixed_label(top,"LE MONDE, AVEC DU CONTEXTE",Vector2(26,68),Vector2(390,22),10,Color("9badae"))
 	var search_btn=fixed_button(top,"",Vector2(420,27),Vector2(44,44),func():show_search())
 	search_btn.icon=preload("res://assets/search.svg");search_btn.expand_icon=true;search_btn.add_theme_constant_override("icon_max_width",22);search_btn.tooltip_text="Rechercher un pays"
@@ -918,8 +920,29 @@ func country_economy(code:String):
 	source_button("PIB : données et méthode","https://data.worldbank.org/indicator/NY.GDP.MKTP.CD")
 	source_button("PIB par habitant : données","https://data.worldbank.org/indicator/NY.GDP.PCAP.CD")
 
+func military_position(kind:String,code:String)->String:
+	var rows:Dictionary=military_rankings.get(kind,{})
+	var row:Dictionary=rows.get(code,{})
+	if row.is_empty():return "Non classé dans cette source"
+	return str(int(row.rank))+" / "+str(rows.size())+" · 2026"
+
+func military_rank_cards(code:String):
+	heading("Classements militaires")
+	var active:Dictionary=military_rankings.get("active",{}).get(code,{})
+	var global:Dictionary=military_rankings.get("global",{}).get(code,{})
+	stat("Rang par effectifs actifs",military_position("active",code),"DefenseMatrixLab · estimations 2026 · militaires actifs uniquement, hors réservistes et paramilitaires")
+	if not active.is_empty():stat("Effectif utilisé pour ce rang",num(active.value),"Estimation DefenseMatrixLab · "+str(int(active.year))+". Cette série peut différer des références détaillées ci-dessous.")
+	stat("Rang de puissance militaire globale",military_position("global",code),"DefenseMatrixLab Power Index · indice indépendant, non officiel")
+	if not global.is_empty():stat("Indice global",("%.1f" % float(global.score)).replace(".",",")+" / 100","Rang publié conservé ; les scores affichés sont arrondis.")
+	history_fold("Ce que ces rangs signifient", "Le rang par effectifs compare les estimations de militaires actifs datées de 2026 par DefenseMatrixLab. Les ex æquo partagent le même rang. La source ne classe pas tous les pays.\n\nL’indice global combine notamment effectifs, moyens terrestres, aériens et navals, budget, logistique, industrie, cyber et capacités stratégiques. Ses pondérations sont les choix de cet éditeur. Il ne mesure pas la probabilité de gagner une guerre et ne résume pas toutes les infrastructures ni la disponibilité réelle des forces.\n\nÉdition embarquée : 2026-q4-r20261116, consultée le 17 novembre 2026. Ces deux classements seront révisés avec les prochaines éditions de Méridien ; ils ne sont pas recalculés avec les chiffres hétérogènes actualisés chaque mois. Les territoires n’héritent pas du rang de leur État de rattachement.\n\nDonnées : DefenseMatrixLab, CC BY 4.0. Mise en forme adaptée pour Méridien ; rangs, valeurs et scores conservés.")
+	source_button("Classement par effectifs · source",str(military_rankings.active_url))
+	source_button("Puissance globale · source",str(military_rankings.global_url))
+	source_button("Méthode et pondérations","https://www.defensematrixlab.com/en/methodology")
+	source_button("Licence des données · CC BY 4.0","https://www.defensematrixlab.com/en/sources")
+
 func country_military(code:String):
 	eyebrow("Forces armées · sources et millésimes")
+	military_rank_cards(code)
 	var detail:Dictionary=defense.get("personnel_detail",{}).get(code,{})
 	heading("Actifs, réservistes et paramilitaires")
 	for pair in [["active","Militaires actifs"],["reserve","Réservistes"],["paramilitary","Paramilitaires"]]:
@@ -958,8 +981,8 @@ func show_compare():
 	button(sheet,a.name+"  ·  changer",func():show_search("a"))
 	button(sheet,b.name+"  ·  changer",func():show_search("b"))
 	var grid:=GridContainer.new();grid.columns=2;grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL;grid.add_theme_constant_override("h_separation",12);grid.add_theme_constant_override("v_separation",12);sheet.add_child(grid)
-	for key in ["name","capital","population","gdp","gdp_pc","economic_rank","active","reserve","paramilitary","tanks","combat_aircraft","area","languages","currency"]:
-		var titles={"gdp_pc":"PIB PAR HABITANT","active":"MILITAIRES ACTIFS · ANNÉE NON PRÉCISÉE","reserve":"RÉSERVISTES · ANNÉE NON PRÉCISÉE","paramilitary":"PARAMILITAIRES · ANNÉE NON PRÉCISÉE","name":"PAYS","capital":"CAPITALE","population":"POPULATION","gdp":"PIB NOMINAL","economic_rank":"RANG ÉCONOMIQUE · PIB","personnel":"MILITAIRES + PARAMILITAIRES ACTIFS","personnel_rank":"RANG PAR EFFECTIFS","tanks":"CHARS · INVENTAIRE INDICATIF","tank_rank":"RANG CHARS · SÉLECTION","combat_aircraft":"AVIONS DE COMBAT · INDICATIF","aircraft_rank":"RANG AVIATION · SÉLECTION","area":"SUPERFICIE","languages":"LANGUES","currency":"MONNAIE"}
+	for key in ["name","capital","population","gdp","gdp_pc","economic_rank","active_rank","global_military_rank","active","reserve","paramilitary","tanks","combat_aircraft","area","languages","currency"]:
+		var titles={"active_rank":"RANG EFFECTIFS ACTIFS · DML","global_military_rank":"PUISSANCE GLOBALE · DML","gdp_pc":"PIB PAR HABITANT","active":"MILITAIRES ACTIFS · ANNÉE NON PRÉCISÉE","reserve":"RÉSERVISTES · ANNÉE NON PRÉCISÉE","paramilitary":"PARAMILITAIRES · ANNÉE NON PRÉCISÉE","name":"PAYS","capital":"CAPITALE","population":"POPULATION","gdp":"PIB NOMINAL","economic_rank":"RANG ÉCONOMIQUE · PIB","personnel":"MILITAIRES + PARAMILITAIRES ACTIFS","personnel_rank":"RANG PAR EFFECTIFS","tanks":"CHARS · INVENTAIRE INDICATIF","tank_rank":"RANG CHARS · SÉLECTION","combat_aircraft":"AVIONS DE COMBAT · INDICATIF","aircraft_rank":"RANG AVIATION · SÉLECTION","area":"SUPERFICIE","languages":"LANGUES","currency":"MONNAIE"}
 		for c in [a,b]:
 			var txt=""
 			match key:
@@ -967,6 +990,8 @@ func show_compare():
 				"gdp","gdp_pc":txt=defense_value(key,c.code)
 				"active","reserve","paramilitary":txt=defense_value("personnel_detail",c.code,key)
 				"economic_rank":txt=military_rank("gdp","value",c.code)
+				"active_rank":txt=military_position("active",c.code)
+				"global_military_rank":txt=military_position("global",c.code)
 				"personnel":txt=defense_value("personnel",c.code)
 				"personnel_rank":txt=military_rank("personnel","value",c.code)
 				"tanks","combat_aircraft":
@@ -979,7 +1004,8 @@ func show_compare():
 				_:txt=str(c[key])
 			comparison_cell(grid,titles[key],txt)
 	note("PIB nominal : milliards de dollars courants. Rang économique par PIB total, pas par richesse par habitant. Le rang PIB utilise une année commune et les États renseignés. Les ex æquo partagent un rang.")
-	note("Effectifs : éditions de sources variables, année des données non précisée. Équipements : dates non harmonisées. Aucun rang militaire n’est calculé à partir de ces données hétérogènes. Les données absentes ne valent jamais zéro.")
+	note("Effectifs : éditions de sources variables, année des données non précisée. Équipements : dates non harmonisées. Les deux rangs DML proviennent d’une édition séparée de DefenseMatrixLab (2026), dont les effectifs estimés peuvent différer des chiffres détaillés. Aucun rang n’est calculé à partir de ces données hétérogènes. Les données absentes ne valent jamais zéro.")
+	source_button("Classements militaires · DefenseMatrixLab",str(military_rankings.global_url))
 	source_button("PIB : Banque mondiale","https://data.worldbank.org/indicator/NY.GDP.MKTP.CD")
 	source_button("Effectifs : tableau et références",DefenseData.PERSONNEL_URL)
 	source_button("Équipements : tableau et références",DefenseData.EQUIPMENT_URL)
@@ -1457,7 +1483,7 @@ func run_monthly_startup():
 	if monthly_sync.running:return
 	boot_overlay=panel(self,Vector2.ZERO,Vector2(540,screen_height()),DARK,0)
 	boot_overlay.name="MonthlyUpdateScreen"
-	fixed_label(boot_overlay,"MÉRIDIEN V21",Vector2(32,58),Vector2(476,55),31,CREAM,true)
+	fixed_label(boot_overlay,"MÉRIDIEN V23",Vector2(32,58),Vector2(476,55),31,CREAM,true)
 	var y=screen_height()*0.38
 	fixed_label(boot_overlay,"Mise à jour en cours\ndes données",Vector2(32,y),Vector2(476,96),29,CREAM,true)
 	fixed_label(boot_overlay,"Échéance du "+monthly_cycle_label(),Vector2(32,y+108),Vector2(476,40),15,GOLD)
