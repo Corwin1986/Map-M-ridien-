@@ -14,7 +14,7 @@ static func indicator(payload, indicator_id:String, countries:Dictionary) -> Dic
   if not value is float and not value is int:return {}
   var year=int(row.get("date",0))
   if value<0 or not is_finite(float(value)) or year<1900 or year>int(Time.get_date_dict_from_system().year):return {}
-  result[code]={"value":value,"year":year,"source":"https://data.worldbank.org/indicator/"+indicator_id}
+  result[code]={"value":value,"year":year,"checked_at":Time.get_datetime_string_from_system(),"source":"https://data.worldbank.org/indicator/"+indicator_id}
  return result if result.size()>100 else {}
 
 static func clean(text:String) -> String:
@@ -86,3 +86,50 @@ static func ranking(records:Dictionary,field:String,countries:Dictionary,same_ye
   if values[i].value!=last_value:rank=i+1
   ranks[values[i].code]=rank;last_value=values[i].value
  return {"ranks":ranks,"count":values.size(),"year":year}
+
+const PERSONNEL_TITLE="List_of_countries_by_number_of_military_and_paramilitary_personnel"
+const PERSONNEL_URL="https://en.wikipedia.org/wiki/"+PERSONNEL_TITLE
+
+static func personnel_detail(payload,countries:Dictionary)->Dictionary:
+ if not payload is Dictionary or not payload.get("parse") is Dictionary:return {}
+ var parsed:Dictionary=payload.parse
+ if not parsed.get("text") is Dictionary:return {}
+ var html=str(parsed.text.get("*","")).replace("&#95;","_")
+ var regex=RegEx.new();regex.compile('(?s)<li\\b[^>]*id="(cite_note-[^"]+)"[^>]*>(.*?)</li>')
+ var references={}
+ for ref in regex.search_all(html):references[ref.get_string(1)]=clean(ref.get_string(2))
+ regex.compile('(?s)<table\\b[^>]*class="[^"]*wikitable[^"]*"[^>]*>(.*?)</table>')
+ var table=""
+ for candidate in regex.search_all(html):
+  if "Activemilitary" in clean(candidate.get_string(1)).replace("\n","") and "Reservemilitary" in clean(candidate.get_string(1)).replace("\n",""):table=candidate.get_string(1);break
+ if table.is_empty():return {}
+ var aliases={"Turkey":"TUR","Türkiye":"TUR","South Korea":"KOR","North Korea":"PRK","Russia":"RUS","Iran":"IRN","Syria":"SYR","Vietnam":"VNM","DR Congo":"COD","Czech Republic":"CZE","Ivory Coast":"CIV","Myanmar":"MMR","United States":"USA","United Kingdom":"GBR"}
+ for code in countries:aliases[countries[code].en]=code
+ regex.compile("(?s)<tr\\b[^>]*>(.*?)</tr>")
+ var cells_regex=RegEx.new();cells_regex.compile("(?s)<td\\b[^>]*>(.*?)</td>")
+ var refs_regex=RegEx.new();refs_regex.compile('href="#(cite_note-[^"]+)"')
+ var year_regex=RegEx.new();year_regex.compile("IISS[^0-9]{0,20}(20[0-9]{2})")
+ var output={}
+ for row in regex.search_all(table):
+  var cells=cells_regex.search_all(row.get_string(1))
+  if cells.size()!=8:continue
+  var code=str(aliases.get(clean(cells[0].get_string(1)),""))
+  if code.is_empty():continue
+  var citations=[]
+  for ref in refs_regex.search_all(row.get_string(1)):
+   var citation=str(references.get(ref.get_string(1),""))
+   if not citation.is_empty() and citation not in citations:citations.append(citation)
+  var reference=" ; ".join(citations)
+  var years=[]
+  for found in year_regex.search_all(reference):
+   var year=int(found.get_string(1))
+   if year not in years:years.append(year)
+  var record={"source":PERSONNEL_URL,"revision":int(parsed.get("revid",0)),"checked_at":Time.get_datetime_string_from_system(),"year":null,"edition_year":years[0] if years.size()==1 else null,"reference":reference}
+  for pair in [["active",1],["reserve",2],["paramilitary",3]]:
+   var raw=clean(cells[pair[1]].get_string(1)).replace(",","").replace(" ","")
+   var value=int(raw) if raw.is_valid_int() and int(raw)>=0 else null
+   # A zero with an unknown-size footnote is not evidence of no personnel.
+   if value==0 and ("not known" in reference.to_lower() or "unknown" in reference.to_lower()):value=null
+   record[pair[0]]=value
+  output[code]=record
+ return output if output.size()>100 else {}

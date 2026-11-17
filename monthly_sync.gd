@@ -60,10 +60,15 @@ func valid_patch(value:Dictionary) -> bool:
  if value.has("defense"):
   if not value.defense is Dictionary:return false
   for category in value.defense:
-   if category not in ["gdp","personnel","equipment"] or not value.defense[category] is Dictionary:return false
+   if category not in ["gdp","gdp_pc","personnel","personnel_detail","equipment"] or not value.defense[category] is Dictionary:return false
    for row in value.defense[category].values():
     if not row is Dictionary:return false
-    if category!="equipment" and (not row.get("value") is float and not row.get("value") is int):return false
+    if category=="personnel_detail":
+     if not str(row.get("source","")).begins_with("https://en.wikipedia.org/"):return false
+     for field in ["active","reserve","paramilitary"]:
+      var n=row.get(field)
+      if n!=null and (not (n is float or n is int) or not is_finite(float(n)) or float(n)<0):return false
+    if category not in ["equipment","personnel_detail"] and (not row.get("value") is float and not row.get("value") is int):return false
  for key in value:
   if key not in ["countries","cities","articles","events","observation_info","defense"]:return false
   if key in ["countries","articles","observation_info"] and not value[key] is Dictionary:return false
@@ -112,7 +117,18 @@ func due(date:Dictionary=Time.get_date_dict_from_system(),now:float=Time.get_uni
 
 func apply_to(target):
  patch=ContentPolicy.clean_data(patch)
- if patch.has("defense"):target.defense.merge(patch.defense,true)
+ if patch.has("defense"):
+  for category in patch.defense:
+   if not target.defense.has(category):target.defense[category]={}
+   for code in patch.defense[category]:
+    var incoming:Dictionary=patch.defense[category][code]
+    var existing:Dictionary=target.defense[category].get(code,{})
+    var field="edition_year" if category=="personnel_detail" else "year"
+    var incoming_year=int(incoming.get(field,0)) if incoming.get(field)!=null else 0
+    var existing_year=int(existing.get(field,0)) if existing.get(field)!=null else 0
+    if incoming_year<existing_year:continue
+    if incoming_year==existing_year and str(incoming.get("checked_at",incoming.get("retrieved","")))<str(existing.get("checked_at",existing.get("retrieved",""))):continue
+    target.defense[category][code]=incoming.duplicate(true)
  if patch.has("countries"):target.countries.merge(patch.countries.duplicate(true),true)
  if patch.has("cities"):target.cities=patch.cities.duplicate(true)
  if patch.has("articles"):target.articles.merge(patch.articles,true)
@@ -129,9 +145,17 @@ func job(kind:String,address:String,weight:float,label:String,extra:Dictionary={
  var j={"kind":kind,"url":address,"weight":weight,"label":label,"done":false}
  j.merge(extra);return j
 
+func append_economic_military_jobs():
+ jobs.append(job("gdp_pc","https://api.worldbank.org/v2/country/all/indicator/NY.GDP.PCAP.CD?format=json&mrnev=1&per_page=400",2,"PIB par habitant"))
+ jobs.append(job("personnel_detail",url("https://en.wikipedia.org/w/api.php",{"action":"parse","page":DefenseData.PERSONNEL_TITLE,"prop":"text|revid","format":"json","maxlag":5}),2,"Actifs, réservistes et paramilitaires"))
+
 func prepare_jobs(cycle:String):
- if state.get("cycle","")==cycle and not jobs.is_empty() and state.get("plan_version",0)==7:return
- state.cycle=cycle;state.plan_version=7;jobs=[]
+ if state.get("cycle","")==cycle and not jobs.is_empty():
+  if state.get("plan_version",0)==8:return
+  if state.get("plan_version",0)==7:
+   append_economic_military_jobs();state.plan_version=8;save_cache();return
+ state.cycle=cycle;state.plan_version=8;jobs=[]
+ append_economic_military_jobs()
  jobs.append(job("facts","https://raw.githubusercontent.com/mledoze/countries/master/countries.json",4,"Pays et territoires"))
  for indicator in ["SP.POP.TOTL","NY.GDP.MKTP.CD"]:
   jobs.append(job("wb","https://api.worldbank.org/v2/country/all/indicator/"+indicator+"?format=json&mrnev=1&per_page=400",6,"Populations et économie",{"indicator":indicator}))
@@ -204,6 +228,7 @@ func run(target,date:Dictionary=Time.get_date_dict_from_system()) -> bool:
   if failed_hosts.has(host) or Time.get_unix_time_from_system()<float(state.get("host_retry",{}).get(host,0)):failures+=1;continue
   message=j.label;current_weight=float(j.weight);emit_progress(message)
   j.attempted_at=Time.get_datetime_string_from_system()
+  var before=semantic_snapshot(j)
   var r=await fetch(j.url)
   if cancelled:break
   var ok=false
@@ -211,10 +236,12 @@ func run(target,date:Dictionary=Time.get_date_dict_from_system()) -> bool:
    ok=consume(j,r.body,date)
   if ok:
    j.checked_at=Time.get_datetime_string_from_system();j.last_error=""
+   j.outcome="checked" if j.kind in ["wiki_check","ucdp_index"] else ("unchanged" if before==semantic_snapshot(j) else "changed")
    j.done=true;completed_weight+=float(j.weight);current_weight=0
    if not save_cache():
     j.done=false;failures+=1;message="Stockage indisponible. Données précédentes conservées.";break
   else:
+   j.outcome="unavailable"
    j.last_error="Réponse non exploitable" if int(r.get("code",0))==200 else ("Connexion indisponible" if int(r.get("code",0))==0 else "Erreur HTTP "+str(int(r.get("code",0))))
    failures+=1;failed_hosts[host]=true
    var retry=Time.get_unix_time_from_system()+21600
@@ -248,15 +275,17 @@ func run(target,date:Dictionary=Time.get_date_dict_from_system()) -> bool:
 func category_for(j:Dictionary)->String:
  var kind=str(j.get("kind",""))
  if kind=="wb":return "Population des pays" if j.get("indicator","")=="SP.POP.TOTL" else "Économie · PIB"
- return {"facts":"Fiches pays","wd":"Population des villes","wiki_check":"Articles","wiki_extract":"Articles","ucdp_index":"Événements UCDP","ucdp_csv":"Événements UCDP","defense_personnel":"Effectifs militaires","defense_equipment":"Équipement militaire"}.get(kind,"Autres")
+ return {"facts":"Fiches pays","wd":"Population des villes","wiki_check":"Articles","wiki_extract":"Articles","ucdp_index":"Événements UCDP","ucdp_csv":"Événements UCDP","gdp_pc":"Économie · PIB","personnel_detail":"Effectifs militaires","defense_personnel":"Effectifs militaires","defense_equipment":"Équipement militaire"}.get(kind,"Autres")
 
 func category_rows()->Array:
  var rows:Array=[]
  for category in ["Population des pays","Population des villes","Économie · PIB","Fiches pays","Articles","Événements UCDP","Effectifs militaires","Équipement militaire"]:
-  var row={"name":category,"total":0,"done":0,"error":"","attempted_at":"","checked_at":str(state.get("category_checks",{}).get(category,""))}
+  var row={"name":category,"total":0,"done":0,"changed":0,"unchanged":0,"unavailable":0,"error":"","attempted_at":"","checked_at":str(state.get("category_checks",{}).get(category,""))}
   for j in jobs:
    if category_for(j)!=category:continue
    row.total+=1
+   var outcome=str(j.get("outcome",""))
+   if outcome in ["changed","unchanged","unavailable"]:row[outcome]+=1
    if str(j.get("attempted_at",""))>row.attempted_at:row.attempted_at=j.attempted_at
    if j.get("done",false):row.done+=1
    elif j.get("last_error","")!="":row.error=j.last_error
@@ -297,6 +326,11 @@ func consume(j:Dictionary,body:PackedByteArray,date:Dictionary) -> bool:
   if old.size()==3 and int(old[0])*100+int(old[2])>int(new[0])*100+int(new[2]):return false
   patch.merge(parsed,true);app.events=parsed.events;app.observation_info=parsed.observation_info;return true
  var payload=JSON.parse_string(text)
+ if j.kind in ["gdp_pc","personnel_detail"]:
+  var updated=DefenseData.indicator(payload,"NY.GDP.PCAP.CD",app.countries) if j.kind=="gdp_pc" else DefenseData.personnel_detail(payload,app.countries)
+  if updated.is_empty():return false
+  if not patch.has("defense"):patch.defense={}
+  patch.defense[j.kind]=updated;app.defense[j.kind]=updated;return true
  if j.kind in ["defense_personnel","defense_equipment"]:
   var updated=DefenseData.indicator(payload,"MS.MIL.TOTL.P1",app.countries) if j.kind=="defense_personnel" else DefenseData.equipment(payload,app.countries)
   if updated.is_empty():return false
@@ -386,3 +420,33 @@ func wiki_extract(j:Dictionary,q:Dictionary) -> bool:
 func status_text() -> String:
  var last=str(state.get("completed_cycle",BASE_CYCLE))
  return "Échéance du 15 : dernière échéance satisfaite "+last+". Vérification automatique au lancement, depuis cet appareil. Les dates des sources peuvent être antérieures. Carte, sélections éditoriales et recettes restent embarquées ; les populations, le PIB, les effectifs militaires, les inventaires d’équipement, les fiches de pays, les textes associés et les événements UCDP sont vérifiés en ligne."
+
+static func semantic(value):
+ if value is int or value is float:return float(value)
+ if value is Dictionary:
+  var out={};var keys=value.keys();keys.sort()
+  for key in keys:
+   if str(key) in ["checked_at","retrieved","revision","revision_id","source_timestamp","updated_at"]:continue
+   out[key]=semantic(value[key])
+  return out
+ if value is Array:
+  var out=[]
+  for item in value:out.append(semantic(item))
+  return out
+ return value
+
+func semantic_snapshot(j:Dictionary)->String:
+ var value
+ match str(j.kind):
+  "gdp_pc","personnel_detail":value=app.defense.get(j.kind,{})
+  "defense_personnel":value=app.defense.get("personnel",{})
+  "defense_equipment":value=app.defense.get("equipment",{})
+  "wb":value=app.defense.get("gdp",{}) if j.get("indicator","")=="NY.GDP.MKTP.CD" else app.countries
+  "facts":value=app.countries
+  "wd":value=app.cities
+  "ucdp_csv":value=app.events
+  "wiki_extract":
+   value={}
+   for key in j.get("keys",[]):value[key]=app.articles.get(key,{})
+  _:return ""
+ return JSON.stringify(semantic(value)).sha256_text()

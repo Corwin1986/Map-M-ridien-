@@ -45,7 +45,7 @@ func run():
  for suffix in ["",".bak",".tmp"]:
   if FileAccess.file_exists(sync.storage_path+suffix):DirAccess.remove_absolute(ProjectSettings.globalize_path(sync.storage_path+suffix))
  root.add_child(sync)
- sync.state={"plan_version":7,"completed_cycle":"2026-10-15","cycle":"2026-11-15"}
+ sync.state={"plan_version":8,"completed_cycle":"2026-10-15","cycle":"2026-11-15"}
  sync.jobs=[sync.job("wb","https://api.worldbank.org/pop",50,"Population",{"indicator":"SP.POP.TOTL"}),sync.job("facts","https://raw.githubusercontent.com/facts",50,"Pays")]
  sync.transport_override=func(address):return response(FileAccess.get_file_as_string("res://tests/fixtures/wb.txt")) if address.ends_with("pop") else response("unavailable",503)
  var complete=await sync.run(a,today)
@@ -75,7 +75,7 @@ func run():
  check(sync.consume(sync.jobs[0],JSON.stringify(extract).to_utf8_buffer(),today),"Article refresh accepted")
  check(sync.patch.articles.FRA.revision_id==999999 and sync.patch.articles.FRA.license=="CC BY-SA 4.0","Revision and attribution preserved")
  # Rate limiting: no repeated calls to a host and Retry-After is honored.
- sync.state={"plan_version":7,"completed_cycle":"2026-10-15","cycle":"2026-11-15"};sync.jobs=[sync.job("facts","https://raw.githubusercontent.com/one",50,""),sync.job("facts","https://raw.githubusercontent.com/two",50,"")]
+ sync.state={"plan_version":8,"completed_cycle":"2026-10-15","cycle":"2026-11-15"};sync.jobs=[sync.job("facts","https://raw.githubusercontent.com/one",50,""),sync.job("facts","https://raw.githubusercontent.com/two",50,"")]
  calls.clear()
  sync.transport_override=func(address):
   calls.append(address)
@@ -84,7 +84,7 @@ func run():
  check(not complete and calls.size()==1,"429 stops requests to the same provider")
  check(sync.state.host_retry["raw.githubusercontent.com"]>Time.get_unix_time_from_system()+39990,"Retry-After retained")
  # Cancel during a request: no false completion and no discarded saved content.
- sync.state={"plan_version":7,"completed_cycle":"2026-10-15","cycle":"2026-11-15"};sync.jobs=[sync.job("facts","https://raw.githubusercontent.com/one",100,"")]
+ sync.state={"plan_version":8,"completed_cycle":"2026-10-15","cycle":"2026-11-15"};sync.jobs=[sync.job("facts","https://raw.githubusercontent.com/one",100,"")]
  sync.transport_override=func(_address):
   sync.cancel();return response(FileAccess.get_file_as_string("res://tests/fixtures/facts.txt"))
  complete=await sync.run(a,today)

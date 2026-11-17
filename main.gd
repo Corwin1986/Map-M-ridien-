@@ -272,7 +272,7 @@ func flag(parent:Node,code:String,pos:Vector2,dims:Vector2):
 
 func build_header():
 	top=panel(self,Vector2.ZERO,Vector2(540,104),DARK,0)
-	fixed_label(top,"MÉRIDIEN V20",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
+	fixed_label(top,"MÉRIDIEN V21",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
 	fixed_label(top,"LE MONDE, AVEC DU CONTEXTE",Vector2(26,68),Vector2(390,22),10,Color("9badae"))
 	var search_btn=fixed_button(top,"",Vector2(420,27),Vector2(44,44),func():show_search())
 	search_btn.icon=preload("res://assets/search.svg");search_btn.expand_icon=true;search_btn.add_theme_constant_override("icon_max_width",22);search_btn.tooltip_text="Rechercher un pays"
@@ -481,7 +481,7 @@ func show_country(code:String,topic:String="L’essentiel"):
 		"Population","Religion","Langue":country_society(code,topic)
 		"Économie":
 			stat("Monnaie",c.currency if c.currency!="" else "Non renseignée")
-			if float(c.gdp)>0:stat("PIB nominal · repère historique",num(c.gdp)+" millions USD",data_caption(str(c.get("gdp_source","Natural Earth")),c.gdp_year,"Économie · PIB"))
+			country_economy(code)
 			show_article_topic(code,["économie","agriculture","industrie","ressources"],"Économie et ressources")
 		"Institutions":
 			stat("Appartenance à l’ONU","État membre" if c.un else "Non membre ou territoire","Source : mledoze/countries · voir les précisions de l’article")
@@ -884,7 +884,8 @@ func populate_search(results:VBoxContainer,txt:String):
 	if n==0:label(results,"Aucun lieu trouvé. Essayez un autre nom.",16,MUTED)
 
 func military_rank(category:String,field:String,code:String) -> String:
-	var ranking=DefenseData.ranking(defense.get(category,{}),field,countries,category!="equipment")
+	if category=="equipment":return "Non classé · dates non comparables"
+	var ranking=DefenseData.ranking(defense.get(category,{}),field,countries,true)
 	if not ranking.ranks.has(code):return "Non classé · donnée non comparable"
 	var text=str(ranking.ranks[code])+" / "+str(ranking.count)
 	return text+(" · "+str(ranking.year) if category!="equipment" else " · sélection documentée")
@@ -896,28 +897,54 @@ func defense_value(category:String,code:String,field:String="value") -> String:
 	if category=="gdp":
 		var billions=float(record[field])/1000000000.0
 		text=("%.1f" % billions).replace(".",",")+" Md USD" if billions>=1 else num(float(record[field])/1000000.0)+" M USD"
+	if category=="gdp_pc":text+=" USD / habitant"
+	if category=="personnel_detail" and record.get("edition_year")!=null:text+=" · édition "+str(int(record.edition_year))
 	if record.get("year")!=null:text+=" · "+str(int(record.year))
 	return text
 
+func record_caption(record:Dictionary,label_text:String)->String:
+	var result=label_text
+	result+="\nAnnée des données : "+(str(int(record.year)) if record.get("year")!=null else "non précisée par la source")
+	if record.get("edition_year")!=null:result+="\nÉdition citée : "+str(int(record.edition_year))+" (ce n’est pas l’année des données)"
+	var checked=str(record.get("checked_at",record.get("retrieved","")))
+	if checked!="":result+="\nSource consultée : "+checked.replace("T"," à ")
+	return result
+
+func country_economy(code:String):
+	stat("PIB nominal",defense_value("gdp",code),record_caption(defense.get("gdp",{}).get(code,{}),"Banque mondiale · dollars courants"))
+	stat("Classement économique · PIB total",military_rank("gdp","value",code),"Position parmi les États renseignés pour la même année. Les territoires ne sont pas classés séparément.")
+	stat("PIB par habitant",defense_value("gdp_pc",code),record_caption(defense.get("gdp_pc",{}).get(code,{}),"Banque mondiale · USD par habitant"))
+	note("Le PIB mesure la production économique. Le PIB par habitant est une moyenne, pas le salaire ni le revenu de chaque personne. Un pays sans donnée comparable reste non classé.")
+	source_button("PIB : données et méthode","https://data.worldbank.org/indicator/NY.GDP.MKTP.CD")
+	source_button("PIB par habitant : données","https://data.worldbank.org/indicator/NY.GDP.PCAP.CD")
+
 func country_military(code:String):
 	eyebrow("Forces armées · sources et millésimes")
-	stat("Effectifs militaires et paramilitaires actifs",defense_value("personnel",code),"Banque mondiale / IISS · réservistes exclus")
-	stat("Rang par effectifs",military_rank("personnel","value",code),"Même année de référence ; États renseignés seulement")
-	note("Les effectifs disponibles sont principalement datés de 2020. Ils ne représentent pas nécessairement les forces actuelles. Une absence de donnée ne signifie pas une absence d’armée.")
-	source_button("Effectifs : définition et données", "https://data.worldbank.org/indicator/MS.MIL.TOTL.P1")
+	var detail:Dictionary=defense.get("personnel_detail",{}).get(code,{})
+	heading("Actifs, réservistes et paramilitaires")
+	for pair in [["active","Militaires actifs"],["reserve","Réservistes"],["paramilitary","Paramilitaires"]]:
+		stat(pair[1],defense_value("personnel_detail",code,pair[0]),record_caption(detail,"Compilation Wikipédia · références citées, principalement IISS"))
+	note("Les éditions et définitions varient entre pays. Ces effectifs ne forment pas un classement mondial comparable. Une donnée absente ne signifie pas zéro.")
+	if not str(detail.get("reference","")).is_empty():history_fold("Références de ces effectifs",str(detail.reference))
+	source_button("Tableau et références des effectifs",DefenseData.PERSONNEL_URL)
+	var official:Dictionary=defense.get("personnel_official",{}).get(code,{})
+	if not official.is_empty():
+		heading("Repère officiel OTAN")
+		stat("Effectifs · estimation 2026",defense_value("personnel_official",code),record_caption(official,str(official.definition)))
+		note("Périmètre différent des seuls militaires actifs : ne pas additionner ces deux chiffres. Ce tableau officiel est embarqué et sera révisé dans les prochaines éditions de l’application.")
+		source_button("OTAN · tableau 7",str(official.source))
+	history_fold("Ancienne série comparable · Banque mondiale", "Militaires et paramilitaires actifs, réservistes exclus : "+defense_value("personnel",code)+". Rang historique : "+military_rank("personnel","value",code)+". Cette série ancienne ne décrit pas les forces actuelles.")
+	source_button("Série historique : définition et données", "https://data.worldbank.org/indicator/MS.MIL.TOTL.P1")
 	heading("Équipement")
 	var equipment:Dictionary=defense.get("equipment",{}).get(code,{})
-	note("Inventaire indicatif : millésimes non harmonisés et informations parfois anciennes. Les quantités ne mesurent ni la disponibilité ni la qualité des matériels. Ces repères ne constituent pas un classement mondial de puissance.")
-	if equipment.get("uncertain",false):note("La ligne de ce pays manque de références dans la source : chiffres à vérifier, exclus des classements.")
+	note("Inventaire indicatif : dates non harmonisées, parfois anciennes. La consultation récente ne garantit pas des chiffres récents. Aucun classement d’équipement n’est calculé avec ces millésimes mélangés.")
+	if equipment.get("uncertain",false):note("La ligne de ce pays manque de références dans la source : chiffres à vérifier.")
 	for pair in [["tanks","Chars de combat"],["combat_aircraft","Avions de combat"],["attack_helicopters","Hélicoptères d’attaque"],["carriers","Porte-avions"],["submarines_nuclear","Sous-marins nucléaires"],["submarines_conventional","Sous-marins conventionnels"]]:
-		stat(pair[1],defense_value("equipment",code,pair[0]),"Date non harmonisée · inventaire indicatif")
-	for pair in [["tanks","Rang indicatif · chars"],["combat_aircraft","Rang indicatif · aviation de combat"]]:
-		stat(pair[1],military_rank("equipment",pair[0],code),"Sous-ensemble de pays avec références ; pas un rang mondial exhaustif")
+		stat(pair[1],defense_value("equipment",code,pair[0]),record_caption(equipment,"Inventaire Wikipédia · disponibilité opérationnelle non mesurée"))
 	source_button("Inventaire et références",DefenseData.EQUIPMENT_URL)
-	source_button("Historique des contributions","https://en.wikipedia.org/w/index.php?title="+DefenseData.EQUIPMENT_TITLE+"&action=history")
 	heading("Puissance militaire globale")
-	paragraph(sheet,"Aucun rang universel ne résume la puissance militaire. Les effectifs et matériels ne suffisent pas : entraînement, disponibilité, logistique et alliances comptent aussi. Le classement Global Firepower est consultable chez son éditeur ; il n’est pas reproduit comme une donnée libre dans Méridien.")
-	source_button("Consulter le classement Global Firepower","https://www.globalfirepower.com/countries-listing.php")
+	paragraph(sheet,"Les effectifs et matériels ne suffisent pas : entraînement, disponibilité, logistique et alliances comptent aussi. Le classement Global Firepower reste consultable chez son éditeur.")
+	source_button("Consulter Global Firepower","https://www.globalfirepower.com/countries-listing.php")
 	show_article_topic(code,["armée","défense","militaire","forces armées"],"Défense et organisation")
 
 func comparison_cell(grid:GridContainer,title_text:String,text:String):
@@ -931,13 +958,14 @@ func show_compare():
 	button(sheet,a.name+"  ·  changer",func():show_search("a"))
 	button(sheet,b.name+"  ·  changer",func():show_search("b"))
 	var grid:=GridContainer.new();grid.columns=2;grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL;grid.add_theme_constant_override("h_separation",12);grid.add_theme_constant_override("v_separation",12);sheet.add_child(grid)
-	for key in ["name","capital","population","gdp","economic_rank","personnel","personnel_rank","tanks","tank_rank","combat_aircraft","aircraft_rank","area","languages","currency"]:
-		var titles={"name":"PAYS","capital":"CAPITALE","population":"POPULATION","gdp":"PIB NOMINAL","economic_rank":"RANG ÉCONOMIQUE · PIB","personnel":"MILITAIRES + PARAMILITAIRES ACTIFS","personnel_rank":"RANG PAR EFFECTIFS","tanks":"CHARS · INVENTAIRE INDICATIF","tank_rank":"RANG CHARS · SÉLECTION","combat_aircraft":"AVIONS DE COMBAT · INDICATIF","aircraft_rank":"RANG AVIATION · SÉLECTION","area":"SUPERFICIE","languages":"LANGUES","currency":"MONNAIE"}
+	for key in ["name","capital","population","gdp","gdp_pc","economic_rank","active","reserve","paramilitary","tanks","combat_aircraft","area","languages","currency"]:
+		var titles={"gdp_pc":"PIB PAR HABITANT","active":"MILITAIRES ACTIFS · ANNÉE NON PRÉCISÉE","reserve":"RÉSERVISTES · ANNÉE NON PRÉCISÉE","paramilitary":"PARAMILITAIRES · ANNÉE NON PRÉCISÉE","name":"PAYS","capital":"CAPITALE","population":"POPULATION","gdp":"PIB NOMINAL","economic_rank":"RANG ÉCONOMIQUE · PIB","personnel":"MILITAIRES + PARAMILITAIRES ACTIFS","personnel_rank":"RANG PAR EFFECTIFS","tanks":"CHARS · INVENTAIRE INDICATIF","tank_rank":"RANG CHARS · SÉLECTION","combat_aircraft":"AVIONS DE COMBAT · INDICATIF","aircraft_rank":"RANG AVIATION · SÉLECTION","area":"SUPERFICIE","languages":"LANGUES","currency":"MONNAIE"}
 		for c in [a,b]:
 			var txt=""
 			match key:
 				"population":txt=num(c.population)+year_suffix(c)
-				"gdp":txt=defense_value("gdp",c.code)
+				"gdp","gdp_pc":txt=defense_value(key,c.code)
+				"active","reserve","paramilitary":txt=defense_value("personnel_detail",c.code,key)
 				"economic_rank":txt=military_rank("gdp","value",c.code)
 				"personnel":txt=defense_value("personnel",c.code)
 				"personnel_rank":txt=military_rank("personnel","value",c.code)
@@ -950,10 +978,10 @@ func show_compare():
 				"languages":txt=(", ".join(c.languages) if c.languages.size()>0 else "Non renseignées")
 				_:txt=str(c[key])
 			comparison_cell(grid,titles[key],txt)
-	note("PIB nominal : milliards de dollars courants. Rang économique par PIB total, pas par richesse par habitant. Les rangs PIB et effectifs utilisent une année commune et les États renseignés. Les ex æquo partagent un rang.")
-	note("Équipements : dates non harmonisées ; rangs limités au sous-ensemble avec références dans la source. Ils ne sont pas des classements mondiaux exhaustifs ni des mesures de puissance. Les données absentes ne valent jamais zéro.")
+	note("PIB nominal : milliards de dollars courants. Rang économique par PIB total, pas par richesse par habitant. Le rang PIB utilise une année commune et les États renseignés. Les ex æquo partagent un rang.")
+	note("Effectifs : éditions de sources variables, année des données non précisée. Équipements : dates non harmonisées. Aucun rang militaire n’est calculé à partir de ces données hétérogènes. Les données absentes ne valent jamais zéro.")
 	source_button("PIB : Banque mondiale","https://data.worldbank.org/indicator/NY.GDP.MKTP.CD")
-	source_button("Effectifs : Banque mondiale / IISS","https://data.worldbank.org/indicator/MS.MIL.TOTL.P1")
+	source_button("Effectifs : tableau et références",DefenseData.PERSONNEL_URL)
 	source_button("Équipements : tableau et références",DefenseData.EQUIPMENT_URL)
 	source_button("Puissance globale : classement de l’éditeur","https://www.globalfirepower.com/countries-listing.php")
 
@@ -1394,6 +1422,7 @@ func show_updates():
 	heading("Bilan par source")
 	for row in monthly_sync.category_rows():
 		var detail="Dernière consultation complète : "+("non enregistrée" if row.checked_at=="" else str(row.checked_at).replace("T"," à "))
+		detail+="\nÉtapes avec contenu modifié : "+str(row.changed)+" · identique : "+str(row.unchanged)+" · indisponibles : "+str(row.unavailable)
 		if row.total>0:detail+="\n"+str(row.done)+" / "+str(row.total)+" étapes acceptées pour l’échéance "+str(monthly_sync.state.get("cycle",""))
 		if row.get("attempted_at","")!="":detail+="\nDernier essai : "+str(row.attempted_at).replace("T"," à ")
 		if row.error!="":detail+="\n"+str(row.error)+". Données disponibles conservées."
@@ -1428,7 +1457,7 @@ func run_monthly_startup():
 	if monthly_sync.running:return
 	boot_overlay=panel(self,Vector2.ZERO,Vector2(540,screen_height()),DARK,0)
 	boot_overlay.name="MonthlyUpdateScreen"
-	fixed_label(boot_overlay,"MÉRIDIEN V20",Vector2(32,58),Vector2(476,55),31,CREAM,true)
+	fixed_label(boot_overlay,"MÉRIDIEN V21",Vector2(32,58),Vector2(476,55),31,CREAM,true)
 	var y=screen_height()*0.38
 	fixed_label(boot_overlay,"Mise à jour en cours\ndes données",Vector2(32,y),Vector2(476,96),29,CREAM,true)
 	fixed_label(boot_overlay,"Échéance du "+monthly_cycle_label(),Vector2(32,y+108),Vector2(476,40),15,GOLD)
