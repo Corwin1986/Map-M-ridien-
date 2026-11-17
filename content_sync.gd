@@ -1,4 +1,5 @@
 extends Node
+const ContentPolicy=preload("res://content_policy.gd")
 # Data-only update channel. Empty URL in this edition: no network requests.
 const CONFIG_PATH="res://data/update_config.json"
 const CACHE_PATH="user://content_update.json"
@@ -17,7 +18,7 @@ func _ready():
 	meta=read_dictionary(META_PATH)
 	var candidate=read_dictionary(CACHE_PATH)
 	if not valid_bundle(candidate):candidate=read_dictionary(CACHE_PATH+".bak")
-	if valid_bundle(candidate) and candidate.revision>int(config.get("bundled_revision",0)):cached=candidate
+	if valid_bundle(candidate) and candidate.revision>int(config.get("bundled_revision",0)):cached=ContentPolicy.clean_data(candidate)
 	request=HTTPRequest.new();request.timeout=30;request.body_size_limit=MAX_PAYLOAD
 	add_child(request);request.request_completed.connect(completed)
 
@@ -27,7 +28,7 @@ func read_dictionary(path:String)->Dictionary:
 	return value if value is Dictionary else {}
 
 func content(key:String,fallback):
-	return cached.get("data",{}).get(key,fallback)
+	return ContentPolicy.clean_data(cached.get("data",{}).get(key,fallback))
 
 func configured()->bool:
 	return config.get("enabled",false) and str(config.get("manifest_url","")).begins_with("https://")
@@ -77,6 +78,7 @@ func completed(result:int,code:int,_headers:PackedStringArray,body:PackedByteArr
 			if key=="articles":
 				var old:Dictionary=merged.data.get("articles",{});old.merge(parsed.data.articles,true);merged.data.articles=old
 			else:merged.data[key]=parsed.data[key]
+		merged=ContentPolicy.clean_data(merged)
 		merged.revision=parsed.revision
 		if not valid_bundle(merged):fail("Contenu fusionné non valide.");return
 		var file=FileAccess.open(CACHE_PATH+".tmp",FileAccess.WRITE)

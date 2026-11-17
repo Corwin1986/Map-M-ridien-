@@ -99,7 +99,8 @@ func screen_height() -> float:
 	return get_viewport_rect().size.y
 
 func read_json(path: String):
-	return JSON.parse_string(FileAccess.get_file_as_string(path))
+	var value=JSON.parse_string(FileAccess.get_file_as_string(path))
+	return preload("res://content_policy.gd").clean_data(value) if path.ends_with("articles.json") or path.ends_with("history_periods.json") else value
 
 func _ready():
 	get_tree().auto_accept_quit = false
@@ -271,7 +272,7 @@ func flag(parent:Node,code:String,pos:Vector2,dims:Vector2):
 
 func build_header():
 	top=panel(self,Vector2.ZERO,Vector2(540,104),DARK,0)
-	fixed_label(top,"MÉRIDIEN V19",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
+	fixed_label(top,"MÉRIDIEN V20",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
 	fixed_label(top,"LE MONDE, AVEC DU CONTEXTE",Vector2(26,68),Vector2(390,22),10,Color("9badae"))
 	var search_btn=fixed_button(top,"",Vector2(420,27),Vector2(44,44),func():show_search())
 	search_btn.icon=preload("res://assets/search.svg");search_btn.expand_icon=true;search_btn.add_theme_constant_override("icon_max_width",22);search_btn.tooltip_text="Rechercher un pays"
@@ -1427,7 +1428,7 @@ func run_monthly_startup():
 	if monthly_sync.running:return
 	boot_overlay=panel(self,Vector2.ZERO,Vector2(540,screen_height()),DARK,0)
 	boot_overlay.name="MonthlyUpdateScreen"
-	fixed_label(boot_overlay,"MÉRIDIEN V19",Vector2(32,58),Vector2(476,55),31,CREAM,true)
+	fixed_label(boot_overlay,"MÉRIDIEN V20",Vector2(32,58),Vector2(476,55),31,CREAM,true)
 	var y=screen_height()*0.38
 	fixed_label(boot_overlay,"Mise à jour en cours\ndes données",Vector2(32,y),Vector2(476,96),29,CREAM,true)
 	fixed_label(boot_overlay,"Échéance du "+monthly_cycle_label(),Vector2(32,y+108),Vector2(476,40),15,GOLD)

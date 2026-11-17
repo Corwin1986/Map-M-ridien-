@@ -1,4 +1,5 @@
 extends Node
+const ContentPolicy=preload("res://content_policy.gd")
 const DefenseData = preload("res://defense_data.gd")
 const Validator = preload("res://content_sync.gd")
 const Data = preload("res://monthly_data.gd")
@@ -52,7 +53,7 @@ func load_cache():
   var value=parser.data
   if not value is Dictionary or value.get("schema",0)!=1 or not value.get("state") is Dictionary or not value.get("patch") is Dictionary or not value.get("jobs") is Array:continue
   if not valid_patch(value.patch):continue
-  state=value.state;patch=value.patch;jobs=value.jobs;return
+  state=value.state;patch=ContentPolicy.clean_data(value.patch);jobs=value.jobs;return
  state={"completed_cycle":BASE_CYCLE,"retry_at":0};patch={};jobs=[]
 
 func valid_patch(value:Dictionary) -> bool:
@@ -110,6 +111,7 @@ func due(date:Dictionary=Time.get_date_dict_from_system(),now:float=Time.get_uni
  return needs_cycle(str(state.get("completed_cycle",BASE_CYCLE)),date) and now>=float(state.get("retry_at",0))
 
 func apply_to(target):
+ patch=ContentPolicy.clean_data(patch)
  if patch.has("defense"):target.defense.merge(patch.defense,true)
  if patch.has("countries"):target.countries.merge(patch.countries.duplicate(true),true)
  if patch.has("cities"):target.cities=patch.cities.duplicate(true)
@@ -372,7 +374,7 @@ func wiki_extract(j:Dictionary,q:Dictionary) -> bool:
  if not patch.has("articles"):patch.articles={}
  for key in j["keys"]:
   var record=app.articles[key].duplicate(true)
-  record.title=page.title;record.text=text;record.pageid=page.pageid
+  record.title=page.title;record.text=ContentPolicy.clean_text(text);record.pageid=page.pageid
   record.url="https://fr.wikipedia.org/?curid="+str(int(page.pageid))
   record.history="https://fr.wikipedia.org/w/index.php?title="+str(page.title).uri_encode()+"&action=history"
   record.retrieved=Time.get_date_string_from_system(true);record.license="CC BY-SA 4.0"
