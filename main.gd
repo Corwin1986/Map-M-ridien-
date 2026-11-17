@@ -73,6 +73,28 @@ var toast_label: Label
 var observation_info:Dictionary={"period":"septembre 2026","version":"26.0.9","retrieved":"2026-11-13"}
 var event_counts: Dictionary = {}
 
+func territory_name(code:String)->String:
+	var c:Dictionary=countries.get(code,{})
+	var parent=str(c.get("parent_code",""))
+	return str(c.get("name",code))+(" / "+str(countries[parent].name) if countries.has(parent) else "")
+
+func apply_territory_overlay():
+	var topology:Dictionary=read_json("res://data/territories.json")
+	var bundled:Dictionary=read_json("res://data/countries.json")
+	for code in bundled:
+		if not countries.has(code):countries[code]=bundled[code].duplicate(true)
+		for key in ["parent_code","territory","alias_of","label"]:
+			if bundled[code].has(key):countries[code][key]=bundled[code][key]
+		if countries[code].get("population")==null and bundled[code].get("population")!=null:
+			for key in ["population","pop_year","pop_source"]:countries[code][key]=bundled[code][key]
+	countries.VAT.un=false
+	for city in cities:
+		var id=str(city.id)
+		if topology.city_codes.has(id):city.code=topology.city_codes[id]
+	for code in countries:countries[code].cities=[]
+	for city in cities:
+		if countries.has(city.code):countries[city.code].cities.append(str(city.id))
+
 func screen_height() -> float:
 	return get_viewport_rect().size.y
 
@@ -249,7 +271,7 @@ func flag(parent:Node,code:String,pos:Vector2,dims:Vector2):
 
 func build_header():
 	top=panel(self,Vector2.ZERO,Vector2(540,104),DARK,0)
-	fixed_label(top,"MÉRIDIEN V18",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
+	fixed_label(top,"MÉRIDIEN V19",Vector2(24,23),Vector2(350,42),29,Color("eee7d6"),true)
 	fixed_label(top,"LE MONDE, AVEC DU CONTEXTE",Vector2(26,68),Vector2(390,22),10,Color("9badae"))
 	var search_btn=fixed_button(top,"",Vector2(420,27),Vector2(44,44),func():show_search())
 	search_btn.icon=preload("res://assets/search.svg");search_btn.expand_icon=true;search_btn.add_theme_constant_override("icon_max_width",22);search_btn.tooltip_text="Rechercher un pays"
@@ -311,15 +333,16 @@ func home_card():
 		var c:Dictionary=countries[selected]
 		var p=panel(selection,Vector2(20,screen_height()-410),Vector2(500,198),CREAM,18)
 		flag(p,selected,Vector2(18,22),Vector2(49,34))
-		var cname=fixed_label(p,c.name,Vector2(81,14),Vector2(350,47),28,INK,true)
+		var cname=fixed_label(p,territory_name(selected),Vector2(81,14),Vector2(350,47),28,INK,true)
 		cname.autowrap_mode=TextServer.AUTOWRAP_OFF;cname.clip_text=true;cname.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
-		fit_country_title(cname,str(c.name))
+		fit_country_title(cname,territory_name(selected))
 		fixed_button(p,"×",Vector2(445,13),Vector2(40,42),func():selected="";map.selected="";map.queue_redraw();home_card(),true)
 		fixed_label(p,c.capital+"  ·  "+c.region,Vector2(20,65),Vector2(460,30),14,MUTED)
 		fixed_label(p,num(c.population)+" habitants"+year_suffix(c),Vector2(20,100),Vector2(460,27),16,INK)
-		fixed_button(p,"Plus d’infos sur le pays  →",Vector2(18,143),Vector2(464,44),func():show_country(selected),true,true)
+		fixed_button(p,"Découvrir ce territoire  →" if c.get("territory",false) else "Plus d’infos sur le pays  →",Vector2(18,143),Vector2(464,44),func():show_country(selected),true,true)
 
 func select_country(code:String):
+	code=str(countries.get(code,{}).get("alias_of",code))
 	set_nav_section(0)
 	if journey!=null:journey.screen={};journey.country_origin={};journey.store.data.opened[code]=true;journey.store.save()
 	selected=code;map.selected=code;map.queue_redraw()
@@ -406,17 +429,18 @@ func stat(title_text:String,value:String,caption:String=""):
 	if caption!="":label(v,caption,12,MUTED)
 
 func show_country(code:String,topic:String="L’essentiel"):
+	code=str(countries.get(code,{}).get("alias_of",code))
 	var same_country=is_instance_valid(modal) and modal.get_meta("country","")==code
 	selected=code;map.selected=code;map.queue_redraw();home_card()
 	if code not in visited:visited.append(code);save_carnet()
 	active_topic=topic;full_read=false
 	var c:Dictionary=countries[code]
-	open_modal(c.name,c.region+"  /  "+c.capital,not same_country)
+	open_modal(territory_name(code),c.region+"  /  "+c.capital,not same_country)
 	modal.set_meta("country",code)
 	flag(modal,code,Vector2(20,22),Vector2(46,34))
 	modal.get_node("SheetTitle").position.x=80
 	modal.get_node("SheetTitle").size.x=362
-	fit_country_title(modal.get_node("SheetTitle"),str(c.name))
+	fit_country_title(modal.get_node("SheetTitle"),territory_name(code))
 	modal.get_node("SheetSubtitle").position.x=80
 	modal.get_node("SheetSubtitle").size.x=362
 	# The strip lives outside article scrolling and keeps its position on selection.
@@ -432,6 +456,9 @@ func show_country(code:String,topic:String="L’essentiel"):
 	match topic:
 		"L’essentiel":
 			eyebrow("Pays et territoires")
+			if c.get("territory",false):
+				note("Cette fiche décrit "+str(c.name)+". Les chiffres ci-dessous concernent ce territoire, avec leur année de référence.")
+				reading_link(sheet,"Voir aussi : "+str(countries[c.parent_code].name),func():show_country(c.parent_code))
 			var first=article_intro(code)
 			if first!="":paragraph(sheet,shorten(first,430))
 			stat("Population",num(c.population),data_caption(str(c.pop_source),c.get("pop_year"),"Population des pays"))
@@ -536,6 +563,8 @@ func country_history(code:String):
 	if record.is_empty() or record.get("coverage","")=="unavailable":
 		note(record.get("note","La chronologie de ce territoire n’est pas encore documentée dans cette édition."))
 		var fallback:Dictionary=articles.get(code,{})
+		for sec in sections_of(str(fallback.get("text",""))):
+			if "histoire" in str(sec.title).to_lower():history_fold(str(sec.title),str(sec.text))
 		if fallback.has("url"):source_button("Consulter l’article source",fallback.url)
 		return
 	if record.get("intro","")!="":history_fold("Vue d’ensemble",record.intro)
@@ -666,7 +695,7 @@ func show_text_reader(title_text:String,a:Dictionary,txt:String):
 	article_credit(a)
 
 func show_city(city:Dictionary):
-	open_modal(city.name,countries[city.code].name+"  /  "+("Capitale" if city.capital else "Grande ville"))
+	open_modal(city.name+(" / "+str(countries[countries[city.code].parent_code].name) if countries[city.code].has("parent_code") else ""),countries[city.code].name+"  /  "+("Capitale" if city.capital else "Grande ville"))
 	button(sheet,"← Revenir au pays",func():show_country(city.code,"Villes"))
 	button(sheet,"Voir sur la carte",func():close_modal();selected=city.code;map.selected=city.code;map.center=Vector2(city.lon,-city.lat);map.zoom=18;map.queue_redraw();home_card())
 	if str(city.get("qid","")).begins_with("Q"):source_button("Identité et références du lieu","https://www.wikidata.org/wiki/"+str(city.qid))
@@ -687,7 +716,7 @@ func country_sources(code:String):
 	heading("D’où viennent ces informations ?")
 	note("Les statistiques conservent leur année et leur source. Les textes sont des extraits encyclopédiques, pas une vérification éditoriale indépendante de chaque affirmation.")
 	var c:Dictionary=countries[code]
-	var population_url="https://data.worldbank.org/indicator/SP.POP.TOTL?locations="+str(c.iso2).to_upper() if str(c.pop_source).contains("Banque mondiale") else "https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/"
+	var population_url="https://data.worldbank.org/indicator/SP.POP.TOTL?locations="+str(c.iso2).to_upper() if str(c.pop_source).contains("Banque mondiale") else "https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-admin-0-details/"
 	source_button("Population : "+str(c.pop_source)+year_suffix(c),population_url)
 	source_button("Faits géographiques : mledoze/countries","https://github.com/mledoze/countries")
 	source_button("Carte : Natural Earth","https://www.naturalearthdata.com/about/terms-of-use/")
@@ -835,8 +864,9 @@ func populate_search(results:VBoxContainer,txt:String):
 	var n:=0
 	for code in country_order:
 		var c:Dictionary=countries[code]
-		if q!="" and not normalized(c.name+" "+c.capital+" "+c.en).contains(q):continue
-		var b=button(results,c.name+"  ·  "+c.region,func():
+		if c.has("alias_of"):continue
+		if q!="" and not normalized(territory_name(code)+" "+c.capital+" "+c.en).contains(q):continue
+		var b=button(results,territory_name(code)+"  ·  "+c.region,func():
 			if compare_pick!="":
 				if compare_pick=="a":compare_a=code
 				else:compare_b=code
@@ -1397,7 +1427,7 @@ func run_monthly_startup():
 	if monthly_sync.running:return
 	boot_overlay=panel(self,Vector2.ZERO,Vector2(540,screen_height()),DARK,0)
 	boot_overlay.name="MonthlyUpdateScreen"
-	fixed_label(boot_overlay,"MÉRIDIEN V18",Vector2(32,58),Vector2(476,55),31,CREAM,true)
+	fixed_label(boot_overlay,"MÉRIDIEN V19",Vector2(32,58),Vector2(476,55),31,CREAM,true)
 	var y=screen_height()*0.38
 	fixed_label(boot_overlay,"Mise à jour en cours\ndes données",Vector2(32,y),Vector2(476,96),29,CREAM,true)
 	fixed_label(boot_overlay,"Échéance du "+monthly_cycle_label(),Vector2(32,y+108),Vector2(476,40),15,GOLD)

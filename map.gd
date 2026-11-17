@@ -10,6 +10,7 @@ signal place_picked(index: int)
 
 var countries: Dictionary = {}
 var shapes: Array = []
+var tiny_points:Array=[]
 var cities: Array = []
 var events: Array = []
 var places: Array = []
@@ -55,10 +56,14 @@ func configure(data: Array, cs: Dictionary, city_data: Array, ev: Array, pl: Arr
 			if prings.size() > 0:
 				rings.append(prings)
 		var outer: Array = []
+		var part_bounds:Array=[]
 		var holes: Array = []
 		var lines := PackedVector2Array()
 		for poly in rings:
 			outer.append(poly[0])
+			var pb=Rect2(poly[0][0],Vector2.ZERO)
+			for point in poly[0]:pb=pb.expand(point)
+			part_bounds.append(pb)
 			for hole in poly.slice(1):holes.append(hole)
 			var ring: PackedVector2Array=poly[0]
 			for j in ring.size()-1:
@@ -69,8 +74,19 @@ func configure(data: Array, cs: Dictionary, city_data: Array, ev: Array, pl: Arr
 			for p in ring:
 				if first:bounds=Rect2(p,Vector2.ZERO);first=false
 				else:bounds=bounds.expand(p)
-		shapes.append({"code":entry.code, "polys":rings,"mesh":make_mesh(outer),"holes":make_mesh(holes),"lines":lines,"bounds":bounds})
+		var tiny=true
+		for pb in part_bounds:
+			if maxf(pb.size.x,pb.size.y)>1.0:tiny=false
+		if tiny:
+			for pb in part_bounds:tiny_points.append({"code":entry.code,"bounds":pb})
+		shapes.append({"code":entry.code, "polys":rings,"mesh":cached_mesh(entry.code,outer,false),"holes":cached_mesh(entry.code,holes,true),"lines":lines,"bounds":bounds})
 	queue_redraw()
+
+func cached_mesh(code:String,rings:Array,holes:bool):
+	if rings.is_empty():return null
+	var path="res://assets/map_meshes/"+code+("_holes" if holes else "")+".res"
+	if ResourceLoader.exists(path):return load(path)
+	return make_mesh(rings)
 
 func make_mesh(rings:Array):
 	var vertices:=PackedVector3Array()
@@ -150,23 +166,24 @@ func _draw():
 		draw_line(project(-180,lat),project(180,lat),Color("142d39"),1)
 	draw_line(project(-180,0),project(180,0),Color("21404a"),1)
 	draw_set_transform(off,0,Vector2(k,k))
-	var use_raster:=base_texture!=null
+	var use_raster:=base_texture!=null and zoom<5.0
 	if use_raster:
 		draw_texture_rect(population_texture if mode=="Population" else base_texture,Rect2(-180,-90,360,180),false)
 	var visible_world:=Rect2(geographic(Vector2.ZERO),size/k)
 	for shape in shapes:
-		if use_raster and shape.code!=selected:continue
+		var highlighted:bool=shape.code==selected or (selected!="" and countries.get(shape.code,{}).get("parent_code","")==selected)
+		if use_raster and not highlighted:continue
 		if not visible_world.intersects(shape.bounds):continue
 		var color := Color("355963")
 		var cc: Dictionary = countries.get(shape.code,{})
 		if mode == "Population":
 			var pop: float = float(cc.get("population",0) if cc.get("population") != null else 0)
 			color = Color("243c46").lerp(Color("c6ab74"),clampf(log(maxf(pop,1))/20.0-0.2,0,1))
-		if shape.code == selected:
+		if highlighted:
 			color = Color("c6ad72")
 		if shape.mesh:draw_mesh(shape.mesh,null,Transform2D.IDENTITY,color)
 		if shape.holes:draw_mesh(shape.holes,null,Transform2D.IDENTITY,Color("0a1c27"))
-		draw_multiline(shape.lines,Color("4d6365") if shape.code != selected else Color("f0d89b"),(0.7 if shape.code != selected else 1.4)/k,true)
+		draw_multiline(shape.lines,Color("4d6365") if not highlighted else Color("f0d89b"),(0.7 if not highlighted else 1.4)/k,true)
 	draw_set_transform(Vector2.ZERO)
 	for line in disputes:
 		for i in line.size()-1:
@@ -203,9 +220,15 @@ func _draw():
 			draw_circle(p,5,gold,false,1.5)
 			if zoom>1.7:
 				draw_string(font,p+Vector2(10,4),pl.short,HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("e5d9ba"))
+	if zoom>=9:
+		for item in tiny_points:
+			if maxf(item.bounds.size.x,item.bounds.size.y)*k>=14:continue
+			var point=(item.bounds.get_center()-center)*k+size/2.0
+			if Rect2(Vector2.ZERO,size).has_point(point):draw_circle(point,4,gold if item.code==selected else Color("b7c9c8"),false,1.2,true)
 	var drawn: Array[Rect2] = []
 	for code in countries:
 		var c: Dictionary = countries[code]
+		if c.has("alias_of"):continue
 		if zoom < 2.0 and float(c.get("area",0)) < 900000:
 			continue
 		if zoom < 4.0 and float(c.get("area",0)) < 150000:
@@ -215,6 +238,10 @@ func _draw():
 		var p := project(c.label[0],c.label[1])
 		if not Rect2(Vector2(15,15),size-Vector2(30,30)).has_point(p):
 			continue
+		if code==selected and mode=="Pays" and zoom>=6:
+			for city in cities:
+				if city.code==code and project(city.lon,city.lat).distance_to(p)<38:
+					p.y+=26;break
 		var txt: String = c.name
 		var fs := 12 if code != selected else 14
 		var ts := font.get_string_size(txt,HORIZONTAL_ALIGNMENT_LEFT,-1,fs)
@@ -272,6 +299,8 @@ func pick(pos: Vector2):
 			if city.code == selected and project(city.lon,city.lat).distance_to(pos)<14:
 				city_picked.emit(city)
 				return
+	var marker:=marker_at(pos)
+	if marker!="":country_picked.emit(marker);return
 	var pt := geographic(pos)
 	for shape in shapes:
 		for poly in shape.polys:
@@ -282,14 +311,16 @@ func pick(pos: Vector2):
 				if not in_hole:
 					country_picked.emit(shape.code)
 					return
-	# Small islands remain reachable at low zoom.
-	var nearest := ""
-	var distance := 10.0
-	for code in countries:
-		var c: Dictionary=countries[code]
-		var d:=project(c.label[0],c.label[1]).distance_to(pos)
-		if d<distance:nearest=code;distance=d
-	if nearest!="":country_picked.emit(nearest)
+
+func marker_at(pos:Vector2)->String:
+	if zoom<9:return ""
+	var nearest="";var distance=10.0;var k=factor()
+	for item in tiny_points:
+		if maxf(item.bounds.size.x,item.bounds.size.y)*k>=14:continue
+		var point=(item.bounds.get_center()-center)*k+size/2.0
+		var d=point.distance_to(pos)
+		if d<distance:nearest=item.code;distance=d
+	return nearest
 
 func _gui_input(event):
 	if (event is InputEventMouseButton or event is InputEventMouseMotion) and event.device == -1:

@@ -26,14 +26,14 @@ func run():
  var today={"year":2026,"month":11,"day":15}
  var wb=json_file("res://tests/fixtures/wb.txt")
  var updated=Data.world_bank(wb,a.countries,"SP.POP.TOTL",today)
- check(updated.size()==256 and updated.FRA.population>0,"Real World Bank response accepted")
+ check(updated.size()==a.countries.size() and updated.FRA.population>0,"Real World Bank response accepted")
  check(Data.world_bank({"error":"bad"},a.countries,"SP.POP.TOTL",today).is_empty(),"Malformed statistics rejected")
  var bad=wb.duplicate(true)
  for row in bad[1]:
   if row.countryiso3code=="FRA":row.value=-2
  check(Data.world_bank(bad,a.countries,"SP.POP.TOTL",today).is_empty(),"Negative population rejected")
  var facts=Data.country_facts(json_file("res://tests/fixtures/facts.txt"),a.countries)
- check(facts.size()==256 and facts.FRA.capital==a.countries.FRA.capital,"Country facts preserve translated unchanged capital")
+ check(facts.size()==a.countries.size() and facts.FRA.capital==a.countries.FRA.capital,"Country facts preserve translated unchanged capital")
  var cities=Data.populations(json_file("res://tests/fixtures/wd.txt"),a.cities,"2026-11-14")
  check(cities.size()==1283,"Real Wikidata response accepted")
  var version=Data.candidate_version(FileAccess.get_file_as_string("res://tests/fixtures/ucdp.txt"))

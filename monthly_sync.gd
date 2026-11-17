@@ -111,11 +111,12 @@ func due(date:Dictionary=Time.get_date_dict_from_system(),now:float=Time.get_uni
 
 func apply_to(target):
  if patch.has("defense"):target.defense.merge(patch.defense,true)
- if patch.has("countries"):target.countries=patch.countries.duplicate(true)
+ if patch.has("countries"):target.countries.merge(patch.countries.duplicate(true),true)
  if patch.has("cities"):target.cities=patch.cities.duplicate(true)
  if patch.has("articles"):target.articles.merge(patch.articles,true)
  if patch.has("events"):
   target.events=patch.events.duplicate(true);target.observation_info=patch.observation_info.duplicate(true)
+ if target.has_method("apply_territory_overlay"):target.apply_territory_overlay()
 
 func url(base:String,params:Dictionary) -> String:
  var pairs=[]
